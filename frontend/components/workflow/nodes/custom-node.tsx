@@ -4,8 +4,7 @@ import { Handle, Position, NodeProps } from "@reactflow/core";
 import { motion } from "framer-motion";
 import { NodeData, useWorkflowStore } from "@/lib/stores/workflow-store";
 import { getIconByName } from "@/lib/utils/icons";
-import { Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 export function CustomNode({ data, id, selected }: NodeProps<NodeData>) {
     const Icon = getIconByName(data.icon);
@@ -29,16 +28,6 @@ export function CustomNode({ data, id, selected }: NodeProps<NodeData>) {
         }
     }
 
-    const handleCheckRecentFiles = () => {
-        if (
-            data.type === "telegram-receive" &&
-            isWorkflowRunning &&
-            nodeResult?.checkRecentFiles
-        ) {
-            nodeResult.checkRecentFiles();
-        }
-    };
-
     return (
         <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -50,12 +39,14 @@ export function CustomNode({ data, id, selected }: NodeProps<NodeData>) {
             }`}
         >
             <div
-                className={`p-3 font-medium border-b flex items-center gap-2 ${
+                className={`p-3 font-medium border-b flex items-center gap-2                 ${
                     data.type.includes("trigger") ||
-                    data.type === "telegram-receive"
+                    data.type === "telegram-trigger"
                         ? "bg-mauve/20"
                         : data.type.includes("action") ||
-                          data.type === "arweave-upload"
+                          data.type === "stellar-sdk" ||
+                          data.type === "telegram-send" ||
+                          data.type === "wallet-integration"
                         ? "bg-sapphire/20"
                         : "bg-peach/20"
                 }`}
@@ -67,23 +58,6 @@ export function CustomNode({ data, id, selected }: NodeProps<NodeData>) {
 
             <div className="p-3 text-xs text-muted-foreground">
                 {data.description}
-
-                {/* Button for Telegram node to check recent files */}
-                {data.type === "telegram-receive" &&
-                    nodeState === "running" && (
-                        <div className="mt-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full text-xs"
-                                onClick={handleCheckRecentFiles}
-                                title="Check for new files and only send the latest one to connected nodes"
-                            >
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Check for New Files
-                            </Button>
-                        </div>
-                    )}
             </div>
 
             {/* Input handle on the left */}
