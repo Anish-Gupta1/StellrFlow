@@ -375,8 +375,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
       switch (node.data.type) {
         case "telegram-trigger": {
+          // Find all nodes connected to this telegram trigger
+          const connectedNodeIds = edges
+            .filter((e) => e.source === nodeId)
+            .map((e) => e.target);
+          const connectedNodes = nodes.filter((n) => connectedNodeIds.includes(n.id));
+          const connectedNodeTypes = connectedNodes.map((n) => n.data.type);
+
           const connectResult = await nodeExecutors.executeTelegramConnect(
-            node.data.config
+            node.data.config,
+            connectedNodeTypes
           );
 
           set((state) => ({
@@ -390,8 +398,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           const chatId = node.data.config.chatId || connectResult.chatId;
           const payload = { ...connectResult, chatId };
 
-          for (const edge of edges.filter((e) => e.source === nodeId)) {
-            await get().executeNode(edge.target, payload);
+          // Only execute connected nodes if there are any
+          if (connectedNodeIds.length > 0) {
+            for (const edge of edges.filter((e) => e.source === nodeId)) {
+              await get().executeNode(edge.target, payload);
+            }
           }
 
           result = payload;

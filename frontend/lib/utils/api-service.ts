@@ -19,6 +19,62 @@ export const telegramApi = {
     return response.json();
   },
 
+  // Send welcome message when only Telegram block is connected (no other blocks)
+  sendWelcomeMessage: async (chatId: string) => {
+    const message =
+      `🎉 **Connected to StellrFlow!**\n\n` +
+      `Your Telegram is now linked to StellrFlow.\n\n` +
+      `⚠️ _No workflow blocks connected yet._\n\n` +
+      `Add blocks in the workflow builder to enable features:\n` +
+      `• **Stellar SDK (Chatbot)** - Ask questions about Stellar\n` +
+      `• **Wallet Integration** - Connect Freighter wallet\n` +
+      `• **Send Telegram** - Send notifications\n\n` +
+      `_Powered by Stellar_`;
+    return telegramApi.sendMessage(chatId, message);
+  },
+
+  // Send message when Stellar SDK chatbot is connected
+  sendChatbotEnabledMessage: async (chatId: string) => {
+    const message =
+      `🤖 **Stellar AI Chatbot Activated!**\n\n` +
+      `You can now ask me anything about Stellar:\n` +
+      `• What is Stellar?\n` +
+      `• How does Soroban work?\n` +
+      `• What are Stellar anchors?\n` +
+      `• /balance <address> - Check XLM balance\n\n` +
+      `Just type your question and I'll help!\n\n` +
+      `_Powered by Stellar_`;
+    return telegramApi.sendMessage(chatId, message);
+  },
+
+  // Send message when Wallet Integration is connected
+  sendWalletSetupMessage: async (chatId: string, walletUrl: string) => {
+    const message =
+      `👛 **Wallet Integration Enabled!**\n\n` +
+      `Connect your Freighter wallet to interact with Stellar:\n\n` +
+      `👉 [Click here to connect Freighter](${walletUrl})\n\n` +
+      `Once connected, you can:\n` +
+      `• View your balances\n` +
+      `• Sign transactions\n` +
+      `• Interact with Stellar dApps\n\n` +
+      `_Powered by Stellar_`;
+    return telegramApi.sendMessage(chatId, message);
+  },
+
+  // Register session with enabled features
+  registerSession: async (chatId: string, features: string[]) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/session/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, features }),
+      });
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to register session" };
+    }
+  },
+
   sendAuthMessage: async (chatId: string, workflowName?: string) => {
     const message =
       `🔐 **StellrFlow Authentication**\n\n` +
@@ -95,7 +151,8 @@ export const stellarApi = {
 
 // Node executors
 export const nodeExecutors = {
-  executeTelegramConnect: async (config: any) => {
+  // Execute Telegram trigger - now accepts connectedNodeTypes to determine behavior
+  executeTelegramConnect: async (config: any, connectedNodeTypes: string[] = []) => {
     const chatId = config.chatId?.trim();
     if (!chatId) {
       throw new Error("Telegram Chat ID is required. Send /register to the bot to get yours.");
@@ -106,16 +163,52 @@ export const nodeExecutors = {
       );
     }
 
-    const result = await telegramApi.sendAuthMessage(
-      chatId,
-      config.label || "Workflow"
-    );
+    // Determine which features are enabled based on connected nodes
+    const features: string[] = [];
+    const hasChatbot = connectedNodeTypes.includes("stellar-sdk");
+    const hasWallet = connectedNodeTypes.includes("wallet-integration");
+    const hasTelegramSend = connectedNodeTypes.includes("telegram-send");
 
-    if (!result.success) {
-      throw new Error(result.error || "Failed to send auth message. Is the bot running?");
+    if (hasChatbot) features.push("chatbot");
+    if (hasWallet) features.push("wallet");
+    if (hasTelegramSend) features.push("telegram-send");
+
+    // Register session with backend to enable/disable features
+    await telegramApi.registerSession(chatId, features);
+
+    let result;
+
+    if (connectedNodeTypes.length === 0) {
+      // No blocks connected - just welcome message
+      result = await telegramApi.sendWelcomeMessage(chatId);
+    } else if (hasChatbot && !hasWallet) {
+      // Chatbot enabled only
+      result = await telegramApi.sendChatbotEnabledMessage(chatId);
+    } else if (hasWallet && !hasChatbot) {
+      // Wallet enabled only - send wallet setup message
+      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
+      result = await telegramApi.sendWalletSetupMessage(chatId, walletUrl);
+    } else if (hasChatbot && hasWallet) {
+      // Both enabled - send combined message with wallet link
+      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
+      const message =
+        `🚀 **Full Stellar Integration Activated!**\n\n` +
+        `✅ **AI Chatbot** - Ask me anything about Stellar\n` +
+        `✅ **Wallet Integration** - Connect your Freighter wallet\n\n` +
+        `👛 **Connect Wallet:** [Click here](${walletUrl})\n\n` +
+        `💬 Type your question or use /balance <address>\n\n` +
+        `_Powered by Stellar_`;
+      result = await telegramApi.sendMessage(chatId, message);
+    } else {
+      // Other combinations (like telegram-send only)
+      result = await telegramApi.sendAuthMessage(chatId, config.label || "Workflow");
     }
 
-    return { success: true, chatId, message: "Auth message sent" };
+    if (!result.success) {
+      throw new Error(result.error || "Failed to send message. Is the bot running?");
+    }
+
+    return { success: true, chatId, features, message: "Connected successfully" };
   },
 
   executeTelegramSend: async (config: any, inputData?: any) => {
@@ -143,19 +236,21 @@ export const nodeExecutors = {
   },
 
   executeStellarSDK: async (config: any, inputData?: any) => {
-    const operation = config.operation || "balance";
+    const operation = config.operation || "chatbot";
     const chatId = inputData?.chatId;
 
+    if (!chatId) {
+      throw new Error("Chat ID required. Connect this block to a Telegram trigger first.");
+    }
+
     if (operation === "chatbot") {
-      // Chatbot mode: Bot handles Stellar Q&A in Telegram. We pass chatId.
-      if (!chatId) {
-        throw new Error("Chat ID required for chatbot mode. Connect from Telegram trigger.");
-      }
+      // Chatbot mode is now handled by the backend based on registered session
+      // Just confirm activation
       return {
         success: true,
         operation: "chatbot",
         chatId,
-        message: "Chatbot mode active. Ask Stellar questions in Telegram.",
+        message: "Stellar AI Chatbot is now active. User can ask questions in Telegram.",
       };
     }
 
@@ -181,19 +276,20 @@ export const nodeExecutors = {
   },
 
   executeWalletIntegration: async (config: any, inputData?: any) => {
-    // When connected to Telegram: bot acts as Stellar wallet
-    // Uses Stellar Wallet SDK / SEP-10 for auth
-    // https://developers.stellar.org/docs/build/apps/wallet
     const chatId = inputData?.chatId || config.chatId;
     if (!chatId) {
-      throw new Error("Telegram Chat ID required for wallet mode. Connect from Telegram trigger.");
+      throw new Error("Connect this block to a Telegram trigger first.");
     }
+
+    // Generate wallet connection URL
+    const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
 
     return {
       success: true,
-      mode: "telegram_wallet",
+      mode: "wallet",
       chatId,
-      message: "Wallet mode: User can sign transactions via Telegram. Connect Freighter for full wallet features.",
+      walletUrl,
+      message: "Wallet integration activated. User will receive Freighter connection link.",
     };
   },
 };
