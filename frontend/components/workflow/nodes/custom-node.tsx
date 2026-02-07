@@ -61,10 +61,22 @@ export function CustomNode({ data, id, selected }: NodeProps<NodeData>) {
             </div>
 
             {/* Input handle on the left */}
-            <Handle type="target" position={Position.Left} id="in" />
+            <Handle 
+                type="target" 
+                position={Position.Left} 
+                id="in"
+                className="!w-3 !h-3 !bg-primary !border-2 !border-background hover:!bg-accent !-left-1.5"
+                isConnectable={true}
+            />
 
             {/* Output handle on the right */}
-            <Handle type="source" position={Position.Right} id="out" />
+            <Handle 
+                type="source" 
+                position={Position.Right} 
+                id="out"
+                className="!w-3 !h-3 !bg-primary !border-2 !border-background hover:!bg-accent !-right-1.5"
+                isConnectable={true}
+            />
         </motion.div>
     );
 }

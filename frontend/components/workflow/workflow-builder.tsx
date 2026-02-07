@@ -8,6 +8,7 @@ import {
     Panel,
     Connection,
     OnConnect,
+    ConnectionLineType,
 } from "@reactflow/core";
 import { Background } from "@reactflow/background";
 import { Controls } from "@reactflow/controls";
@@ -189,6 +190,13 @@ function WorkflowCanvas() {
                     deleteKeyCode="Delete"
                     multiSelectionKeyCode="Control"
                     selectionKeyCode="Shift"
+                    connectionLineType={ConnectionLineType.SmoothStep}
+                    connectionLineStyle={{ stroke: 'hsl(266, 85%, 77%)', strokeWidth: 2 }}
+                    defaultEdgeOptions={{
+                        type: 'smoothstep',
+                        animated: true,
+                        style: { stroke: 'hsl(266, 85%, 77%)', strokeWidth: 2 },
+                    }}
                 >
                     <Controls position="bottom-right" className="m-3" />
                     <MiniMap

@@ -71,37 +71,50 @@
 
 /* ReactFlow specific styles */
 .react-flow__handle {
-  @apply w-4 h-4 rounded-full border-2 border-white bg-primary;
-  transition: background-color 0.15s ease-in-out;
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--background));
+  background-color: hsl(var(--primary));
+  transition: all 0.15s ease-in-out;
 }
 
 .react-flow__handle:hover {
-  @apply bg-accent;
+  background-color: hsl(var(--accent));
+  transform: scale(1.2);
 }
 
 .react-flow__handle-connecting {
-  @apply bg-accent;
+  background-color: hsl(var(--accent));
 }
 
 .react-flow__handle-valid {
-  @apply bg-green;
+  background-color: hsl(var(--ctp-green));
 }
 
 .react-flow__handle-invalid {
-  @apply bg-red;
+  background-color: hsl(var(--ctp-red));
 }
 
 .react-flow__edge-path {
-  @apply stroke-2 stroke-muted-foreground;
+  stroke-width: 2px;
+  stroke: hsl(var(--ctp-mauve));
   transition: stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out;
 }
 
 .react-flow__edge:hover .react-flow__edge-path {
-  @apply stroke-primary stroke-[3px];
+  stroke: hsl(var(--ctp-sapphire));
+  stroke-width: 3px;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  @apply stroke-accent stroke-[3px];
+  stroke: hsl(var(--ctp-sapphire));
+  stroke-width: 3px;
+}
+
+.react-flow__connection-path {
+  stroke: hsl(var(--ctp-mauve));
+  stroke-width: 2px;
 }
 
 .react-flow__node {
