@@ -42,6 +42,12 @@ if (!TELEGRAM_BOT_TOKEN) {
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 const userChatIds = new Map<string, string>();
 
+// Session management - tracks which features are enabled for each chat
+const activeSessions = new Map<string, {
+  features: string[];
+  registeredAt: Date;
+}>();
+
 // Stellar Horizon client (for balance queries)
 const horizon = new Horizon.Server(HORIZON_URL);
 
@@ -93,7 +99,7 @@ function initBot() {
     );
   });
 
-  // Chatbot mode: answer Stellar questions (when connected from StellrFlow + Stellar SDK node)
+  // Chatbot mode: answer Stellar questions (only when chatbot feature is enabled)
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id.toString();
     const text = msg.text?.trim() || "";
@@ -101,7 +107,27 @@ function initBot() {
     // Skip commands (handled above)
     if (text.startsWith("/")) return;
 
-    // Chatbot: answer Stellar-related questions using SDK/docs
+    // Check if this chat has chatbot feature enabled
+    const session = activeSessions.get(chatId);
+    const hasChatbot = session?.features.includes("chatbot");
+
+    // If no session or chatbot not enabled, send a helpful message
+    if (!session) {
+      // No active session - user hasn't connected via StellrFlow
+      return; // Silent - don't respond to random messages
+    }
+
+    if (!hasChatbot) {
+      // Session exists but chatbot not enabled
+      await bot.sendMessage(
+        chatId,
+        "💡 To enable the AI chatbot, connect the **Stellar SDK (Chatbot)** block to your Telegram trigger in StellrFlow and run the workflow again.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Chatbot is enabled - answer Stellar-related questions using SDK/docs
     if (text.length > 2) {
       try {
         const lower = text.toLowerCase();
@@ -113,20 +139,80 @@ function initBot() {
             const account = await horizon.loadAccount(addrMatch[0]);
             const xlm = account.balances.find((b) => b.asset_type === "native");
             const bal = xlm && "balance" in xlm ? xlm.balance : "0";
-            reply = `Balance: **${bal} XLM**`;
+            reply = `💰 Balance: **${bal} XLM**`;
           } else {
             reply = "Send `/balance G...` with a Stellar address to check balance.";
           }
-        } else if (lower.includes("stellar") || lower.includes("soroban") || lower.includes("xlm")) {
+        } else if (lower.includes("what is stellar") || lower.includes("about stellar")) {
           reply =
-            "Stellar is a decentralized network. XLM is the native asset. " +
-            "Soroban is the smart contract platform. Docs: https://developers.stellar.org";
+            "🌟 **Stellar** is a decentralized, open-source blockchain network designed for fast, low-cost cross-border payments and asset transfers.\n\n" +
+            "Key features:\n" +
+            "• Transactions settle in 3-5 seconds\n" +
+            "• Fees are ~0.00001 XLM (~$0.000001)\n" +
+            "• Built-in DEX for asset exchange\n" +
+            "• Supports tokenization of any asset\n\n" +
+            "📚 Docs: https://developers.stellar.org";
+        } else if (lower.includes("soroban")) {
+          reply =
+            "🔧 **Soroban** is Stellar's smart contract platform.\n\n" +
+            "Features:\n" +
+            "• Written in Rust, compiled to WASM\n" +
+            "• Predictable gas fees\n" +
+            "• Built-in testing framework\n" +
+            "• Interoperable with Stellar's asset layer\n\n" +
+            "📚 Start building: https://soroban.stellar.org";
+        } else if (lower.includes("anchor") || lower.includes("sep")) {
+          reply =
+            "⚓ **Anchors** are bridges between Stellar and traditional finance.\n\n" +
+            "Key SEPs (Stellar Ecosystem Proposals):\n" +
+            "• **SEP-6** - Deposit/withdraw fiat\n" +
+            "• **SEP-10** - Authentication\n" +
+            "• **SEP-24** - Interactive deposits\n" +
+            "• **SEP-31** - Cross-border payments\n\n" +
+            "📚 Docs: https://developers.stellar.org/docs/anchoring-assets";
+        } else if (lower.includes("xlm") || lower.includes("lumen")) {
+          reply =
+            "💫 **XLM (Lumens)** is Stellar's native cryptocurrency.\n\n" +
+            "Uses:\n" +
+            "• Pay transaction fees\n" +
+            "• Minimum balance requirements\n" +
+            "• Bridge currency for asset exchange\n\n" +
+            "Current network: " + STELLAR_NETWORK;
+        } else if (lower.includes("freighter") || lower.includes("wallet")) {
+          reply =
+            "👛 **Freighter** is the most popular Stellar wallet browser extension.\n\n" +
+            "Features:\n" +
+            "• Secure key management\n" +
+            "• Sign Soroban transactions\n" +
+            "• Multiple account support\n\n" +
+            "🔗 Install: https://freighter.app";
+        } else if (lower.includes("horizon") || lower.includes("api")) {
+          reply =
+            "🌐 **Horizon** is Stellar's REST API server.\n\n" +
+            "Endpoints:\n" +
+            "• `/accounts/{id}` - Account info\n" +
+            "• `/transactions` - Submit/query txns\n" +
+            "• `/assets` - Asset info\n\n" +
+            "📚 API Docs: https://developers.stellar.org/api/horizon";
         } else if (lower.includes("help") || lower.includes("?")) {
           reply =
-            "Ask about: balance, XLM, Soroban, Stellar. Or use /balance <address>";
+            "🤖 I can help with Stellar! Ask about:\n\n" +
+            "• What is Stellar?\n" +
+            "• What is Soroban?\n" +
+            "• What is XLM?\n" +
+            "• What are Anchors?\n" +
+            "• Tell me about Freighter wallet\n" +
+            "• /balance <address>\n\n" +
+            "Just type your question!";
         } else {
           reply =
-            "I can help with Stellar! Try: 'What is XLM?' or /balance <address>";
+            "🤔 I'm not sure about that. Try asking about:\n" +
+            "• Stellar basics\n" +
+            "• Soroban smart contracts\n" +
+            "• XLM / Lumens\n" +
+            "• Anchors & SEPs\n" +
+            "• Freighter wallet\n\n" +
+            "Or use `/balance <address>` to check a balance.";
         }
 
         if (reply) {
@@ -135,7 +221,7 @@ function initBot() {
       } catch (err: any) {
         await bot.sendMessage(
           chatId,
-          `Error: ${err?.response?.data?.detail || err.message || "Try again"}`
+          `❌ Error: ${err?.response?.data?.detail || err.message || "Try again"}`
         );
       }
     }
@@ -264,11 +350,76 @@ app.get("/api/stellar/balance/:address", async (req, res) => {
   }
 });
 
+// Session registration - called by frontend when workflow starts
+app.post("/api/session/register", (req, res) => {
+  try {
+    const { chatId, features } = req.body;
+
+    if (!chatId) {
+      return res.status(400).json({ error: "chatId is required" });
+    }
+
+    const chatIdStr = String(chatId).trim();
+    const featureList = Array.isArray(features) ? features : [];
+
+    // Register or update session
+    activeSessions.set(chatIdStr, {
+      features: featureList,
+      registeredAt: new Date(),
+    });
+
+    console.log(`Session registered for ${chatIdStr} with features:`, featureList);
+
+    return res.json({
+      success: true,
+      chatId: chatIdStr,
+      features: featureList,
+      message: `Session registered with ${featureList.length} feature(s)`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to register session",
+    });
+  }
+});
+
+// Get session info
+app.get("/api/session/:chatId", (req, res) => {
+  const { chatId } = req.params;
+  const session = activeSessions.get(chatId);
+
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      error: "No active session for this chat",
+    });
+  }
+
+  return res.json({
+    success: true,
+    chatId,
+    ...session,
+  });
+});
+
+// Clear session
+app.delete("/api/session/:chatId", (req, res) => {
+  const { chatId } = req.params;
+  activeSessions.delete(chatId);
+
+  return res.json({
+    success: true,
+    message: "Session cleared",
+  });
+});
+
 app.get("/api/telegram/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "stellrflow-telegram-stellar",
     network: STELLAR_NETWORK,
+    activeSessions: activeSessions.size,
     timestamp: new Date().toISOString(),
   });
 });
