@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Catppuccin Mocha Theme */
+  --ctp-rosewater: 220, 54%, 86%;
+  --ctp-flamingo: 0, 59%, 79%;
+  --ctp-pink: 316, 72%, 75%;
+  --ctp-mauve: 266, 85%, 77%;
+  --ctp-red: 342, 79%, 75%;
+  --ctp-maroon: 350, 65%, 77%;
+  --ctp-peach: 21, 86%, 73%;
+  --ctp-yellow: 41, 86%, 74%;
+  --ctp-green: 128, 58%, 72%;
+  --ctp-teal: 171, 78%, 74%;
+  --ctp-sky: 189, 71%, 73%;
+  --ctp-sapphire: 199, 76%, 69%;
+  --ctp-blue: 217, 92%, 76%;
+  --ctp-lavender: 238, 100%, 83%;
+  --ctp-text: 226, 64%, 88%;
+  --ctp-subtext1: 226, 50%, 80%;
+  --ctp-subtext0: 225, 36%, 72%;
+  --ctp-overlay2: 222, 25%, 64%;
+  --ctp-overlay1: 219, 19%, 56%;
+  --ctp-overlay0: 216, 15%, 48%;
+  --ctp-surface2: 214, 14%, 34%;
+  --ctp-surface1: 213, 12%, 26%;
+  --ctp-surface0: 213, 11%, 20%;
+  --ctp-base: 213, 11%, 15%;
+  --ctp-mantle: 212, 13%, 12%;
+  --ctp-crust: 212, 13%, 9%;
+
+  /* Apply Catppuccin colors to shadcn/ui theme variables */
+  --background: var(--ctp-base);
+  --foreground: var(--ctp-text);
+  --card: var(--ctp-mantle);
+  --card-foreground: var(--ctp-text);
+  --popover: var(--ctp-crust);
+  --popover-foreground: var(--ctp-text);
+  --primary: var(--ctp-mauve);
+  --primary-foreground: var(--ctp-crust);
+  --secondary: var(--ctp-surface0);
+  --secondary-foreground: var(--ctp-text);
+  --muted: var(--ctp-surface1);
+  --muted-foreground: var(--ctp-subtext0);
+  --accent: var(--ctp-sapphire);
+  --accent-foreground: var(--ctp-crust);
+  --destructive: var(--ctp-red);
+  --destructive-foreground: var(--ctp-crust);
+  --border: var(--ctp-surface2);
+  --input: var(--ctp-surface0);
+  --ring: var(--ctp-lavender);
+  --chart-1: var(--ctp-blue);
+  --chart-2: var(--ctp-sapphire);
+  --chart-3: var(--ctp-lavender);
+  --chart-4: var(--ctp-mauve);
+  --chart-5: var(--ctp-pink);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ReactFlow specific styles */
+.react-flow__handle {
+  @apply w-4 h-4 rounded-full border-2 border-white bg-primary;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.react-flow__handle:hover {
+  @apply bg-accent;
+}
+
+.react-flow__handle-connecting {
+  @apply bg-accent;
+}
+
+.react-flow__handle-valid {
+  @apply bg-green;
+}
+
+.react-flow__handle-invalid {
+  @apply bg-red;
+}
+
+.react-flow__edge-path {
+  @apply stroke-2 stroke-muted-foreground;
+  transition: stroke 0.15s ease-in-out, stroke-width 0.15s ease-in-out;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  @apply stroke-primary stroke-[3px];
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  @apply stroke-accent stroke-[3px];
+}
+
+.react-flow__node {
+  transition: transform 0.15s ease-in-out;
+}
+
+.react-flow__node:hover {
+  transform: translateY(-2px);
+}
+
+.react-flow__controls {
+  @apply bg-card border border-border rounded-md shadow-md;
+}
+
+.react-flow__controls-button {
+  @apply border-border bg-card text-foreground hover:bg-muted;
+}
