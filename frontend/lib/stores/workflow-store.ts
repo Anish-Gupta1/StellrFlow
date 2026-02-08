@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-// Use ReactFlow's utility functions for applying changes
 import {
   applyNodeChanges,
   applyEdgeChanges,
@@ -9,16 +8,12 @@ import {
   NodeChange as ReactFlowNodeChange,
   EdgeChange as ReactFlowEdgeChange,
   XYPosition,
-  CoordinateExtent,
   Position,
 } from "@reactflow/core";
 import "@reactflow/core/dist/style.css";
 
-// Define the type interfaces we need
 export type Node<T = any> = any;
-
 export type Edge<T = any> = any;
-
 export type NodeChange = any;
 export type EdgeChange = any;
 
@@ -42,7 +37,6 @@ type WorkflowState = {
   >;
   nodeResults: Record<string, any>;
 
-  // Node actions
   setNodes: (nodes: Node<NodeData>[]) => void;
   onNodesChange: (changes: NodeChange[]) => void;
   addNode: (nodeType: string, position: XYPosition) => void;
@@ -50,7 +44,6 @@ type WorkflowState = {
   duplicateNode: (nodeId: string) => void;
   deleteNode: (nodeId: string) => void;
 
-  // Edge actions
   setEdges: (edges: Edge[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   addEdge: (params: {
@@ -61,82 +54,116 @@ type WorkflowState = {
   }) => void;
   deleteEdge: (edgeId: string) => void;
 
-  // Selection actions
   setSelectedNode: (node: Node<NodeData> | null) => void;
   setSelectedEdge: (edge: Edge | null) => void;
 
-  // Workflow execution
   startWorkflow: () => Promise<void>;
   stopWorkflow: () => Promise<void>;
   executeNode: (nodeId: string, inputData?: any) => Promise<any>;
 
-  // Save/Load
   saveWorkflow: () => void;
   loadWorkflow: () => void;
 };
 
-// Node type definitions for the sidebar
 export const NODE_TYPES = {
   trigger: {
     category: "Triggers",
     items: [
       {
-        type: "telegram-receive",
-        label: "Receive Telegram",
+        type: "telegram-trigger",
+        label: "Telegram",
         icon: "messageCircle",
-        description: "Receive messages and files from Telegram bot",
+        description: "Enter your Telegram chat ID and hit Run to receive auth message and start workflow",
         config: {
-          checkInterval: "10", // seconds
-          messageTypes: "all", // all, photo, document, etc.
-          maxFileSizeInMB: "50",
+          chatId: "",
+          messageTypes: "all",
         },
       },
       {
-        type: "crypto-price-trigger",
-        label: "Token Price",
-        icon: "trendingUp",
-        description: "Trigger when a cryptocurrency reaches a target price",
+        type: "discord-trigger",
+        label: "Discord",
+        icon: "hash",
+        description: "Trigger on Discord channel messages",
         config: {
-          token: "arweave", // arweave or ao
-          targetPrice: "15.00", // target price in USD
-          comparisonType: "above", // above or below
-          checkInterval: "30", // seconds
+          serverId: "",
+          channelId: "",
+          eventType: "message",
         },
       },
       {
-        type: "apm-version-trigger",
-        label: "APM Version",
-        icon: "package",
-        description: "Trigger when a new version of an Arweave package is published",
+        type: "whatsapp-trigger",
+        label: "WhatsApp",
+        icon: "phone",
+        description: "Trigger on incoming WhatsApp messages",
         config: {
-          packageName: "markdown", // package name to monitor
-          checkInterval: "60", // seconds
+          provider: "twilio",
+          phoneNumberId: "",
         },
       },
     ],
   },
+
   action: {
     category: "Actions",
     items: [
       {
-        type: "telegram",
-        label: "Send Telegram",
-        icon: "messageCircle",
-        description: "Send a Telegram message",
-        config: { chatId: "", message: "" },
+        type: "stellar-sdk",
+        label: "Stellar SDK (Chatbot)",
+        icon: "send",
+        description: "Chatbot mode: User asks Stellar questions in Telegram, bot answers using SDK",
+        config: {
+          network: "testnet",
+          operation: "chatbot",
+          destination: "",
+        },
       },
       {
-        type: "arweave-upload",
-        label: "Upload to Arweave",
-        icon: "upload",
-        description: "Upload files to Arweave permanent storage",
+        type: "wallet-integration",
+        label: "Wallet Integration",
+        icon: "wallet",
+        description: "Connect to Freighter browser wallet or create a Telegram-native wallet",
         config: {
-          tags: "", // comma-separated list of tags for the file
-          permanent: "true", // Store permanently
+          walletProvider: "freighter",
+          network: "testnet",
+        },
+      },
+      {
+        type: "telegram-send",
+        label: "Send Telegram",
+        icon: "messageCircle",
+        description: "Send a message to Telegram. Use {balance}, {address} for templates.",
+        config: {
+          chatId: "",
+          message: "",
+        },
+      },
+      {
+        type: "anchor-onramp",
+        label: "Anchor On-Ramp",
+        icon: "arrowDown",
+        description: "Convert fiat to Stellar assets via anchor",
+        config: {
+          anchorUrl: "",
+          fiatCurrency: "USD",
+          asset: "USDC",
+          amount: "",
+        },
+      },
+      {
+        type: "anchor-offramp",
+        label: "Anchor Off-Ramp",
+        icon: "arrowUp",
+        description: "Convert Stellar assets to fiat via anchor",
+        config: {
+          anchorUrl: "",
+          asset: "USDC",
+          fiatCurrency: "USD",
+          amount: "",
         },
       },
     ],
   },
+
   logic: {
     category: "Logic",
     items: [
@@ -144,14 +171,13 @@ export const NODE_TYPES = {
         type: "delay",
         label: "Delay",
         icon: "clock",
-        description: "Add a delay",
+        description: "Add a delay in workflow execution",
         config: { delay: 5 },
       },
     ],
   },
 };
 
-// Helper to get node data from type
 export const getNodeDataFromType = (nodeType: string): NodeData | null => {
   for (const category of Object.values(NODE_TYPES)) {
     const item = category.items.find((item) => item.type === nodeType);
@@ -196,61 +222,32 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   updateNodeData: (nodeId, data) => {
-    try {
-      console.log(`Updating node ${nodeId} with data:`, data);
+    set((state) => {
+      const node = state.nodes.find((n) => n.id === nodeId);
+      if (!node) return state;
 
-      set((state) => {
-        // Find the node first to make sure it exists
-        const node = state.nodes.find((n) => n.id === nodeId);
-        if (!node) {
-          console.error(`Node with ID ${nodeId} not found.`);
-          return state; // Return unchanged state
-        }
-
-        // If config is being updated, make sure we merge properly
-        let updatedData = { ...data };
-        if (data.config) {
-          updatedData.config = {
-            ...node.data.config,
-            ...data.config,
-          };
-          console.log("Updated config:", updatedData.config);
-        }
-
-        // Create new nodes array with updated node
-        const updatedNodes = state.nodes.map((node) => {
-          if (node.id === nodeId) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                ...updatedData,
-              },
-            };
-          }
-          return node;
-        });
-
-        // Log the update so we can see it in the console
-        const updatedNode = updatedNodes.find((n) => n.id === nodeId);
-        console.log(
-          `Node ${nodeId} updated successfully:`,
-          updatedNode?.data
-        );
-
-        return {
-          nodes: updatedNodes,
-          // Also update selectedNode if it matches the updated node
-          selectedNode:
-            state.selectedNode?.id === nodeId
-              ? updatedNodes.find((n) => n.id === nodeId) ||
-              state.selectedNode
-              : state.selectedNode,
+      let updatedData = { ...data };
+      if (data.config) {
+        updatedData.config = {
+          ...node.data.config,
+          ...data.config,
         };
-      });
-    } catch (error) {
-      console.error("Error updating node data:", error);
-    }
+      }
+
+      const updatedNodes = state.nodes.map((n) =>
+        n.id === nodeId
+          ? { ...n, data: { ...n.data, ...updatedData } }
+          : n
+      );
+
+      return {
+        nodes: updatedNodes,
+        selectedNode:
+          state.selectedNode?.id === nodeId
+            ? updatedNodes.find((n) => n.id === nodeId) || state.selectedNode
+            : state.selectedNode,
+      };
+    });
   },
 
   duplicateNode: (nodeId) => {
@@ -274,18 +271,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   deleteNode: (nodeId) => {
     set((state) => {
-      // Remove associated edges
       const newEdges = state.edges.filter(
         (edge) => edge.source !== nodeId && edge.target !== nodeId
       );
-
       return {
         nodes: state.nodes.filter((node) => node.id !== nodeId),
         edges: newEdges,
         selectedNode:
-          state.selectedNode?.id === nodeId
-            ? null
-            : state.selectedNode,
+          state.selectedNode?.id === nodeId ? null : state.selectedNode,
       };
     });
   },
@@ -298,7 +291,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   addEdge: (params) => {
-    // Check if connection already exists to prevent duplicates
     const exists = get().edges.some(
       (edge) =>
         edge.source === params.source &&
@@ -306,7 +298,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         edge.sourceHandle === params.sourceHandle &&
         edge.targetHandle === params.targetHandle
     );
-
     if (exists) return;
 
     const newEdge: Edge = {
@@ -332,7 +323,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   setSelectedNode: (node) => set({ selectedNode: node }),
   setSelectedEdge: (edge) => set({ selectedEdge: edge }),
 
-  // Workflow execution
   startWorkflow: async () => {
     try {
       set({
@@ -341,13 +331,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         nodeResults: {},
       });
 
-      // Find trigger nodes (nodes without incoming edges)
       const { nodes, edges } = get();
       const triggerNodes = nodes.filter(
         (node) => !edges.some((edge) => edge.target === node.id)
       );
 
-      // Start execution from the trigger nodes
       for (const triggerNode of triggerNodes) {
         get().executeNode(triggerNode.id);
       }
@@ -358,148 +346,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   stopWorkflow: async () => {
-    try {
-      console.log("Stopping workflow...");
-
-      // Handle clean-up for each node
-      const { nodes, nodeResults } = get();
-
-      // Stop any running trigger nodes
-
-      // Stop telegram-receive nodes
-      const telegramNodes = nodes.filter(
-        (node) => node.data.type === "telegram-receive"
-      );
-
-      if (telegramNodes.length > 0) {
-        console.log(
-          `Stopping ${telegramNodes.length} Telegram nodes...`
-        );
-
-        for (const node of telegramNodes) {
-          console.log(
-            `Stopping Telegram node: ${node.data.label} (${node.id})`
-          );
-
-          if (nodeResults[node.id]?.stop) {
-            try {
-              await nodeResults[node.id].stop();
-              console.log(
-                `Successfully stopped Telegram node: ${node.id}`
-              );
-            } catch (error) {
-              console.error(
-                `Error stopping Telegram node ${node.id}:`,
-                error
-              );
-            }
-          } else {
-            console.warn(
-              `No stop method found for Telegram node: ${node.id}`
-            );
-          }
-        }
-      }
-
-      // Stop crypto-price-trigger nodes
-      const cryptoPriceNodes = nodes.filter(
-        (node) => node.data.type === "crypto-price-trigger"
-      );
-
-      if (cryptoPriceNodes.length > 0) {
-        console.log(
-          `Stopping ${cryptoPriceNodes.length} Crypto Price nodes...`
-        );
-
-        for (const node of cryptoPriceNodes) {
-          console.log(
-            `Stopping Crypto Price node: ${node.data.label} (${node.id})`
-          );
-
-          if (nodeResults[node.id]?.stop) {
-            try {
-              await nodeResults[node.id].stop();
-              console.log(
-                `Successfully stopped Crypto Price node: ${node.id}`
-              );
-            } catch (error) {
-              console.error(
-                `Error stopping Crypto Price node ${node.id}:`,
-                error
-              );
-            }
-          } else {
-            console.warn(
-              `No stop method found for Crypto Price node: ${node.id}`
-            );
-          }
-        }
-      }
-
-      // Stop APM version trigger nodes
-      const apmVersionNodes = nodes.filter(
-        (node) => node.data.type === "apm-version-trigger"
-      );
-
-      if (apmVersionNodes.length > 0) {
-        console.log(
-          `Stopping ${apmVersionNodes.length} APM Version nodes...`
-        );
-
-        for (const node of apmVersionNodes) {
-          console.log(
-            `Stopping APM Version node: ${node.data.label} (${node.id})`
-          );
-
-          if (nodeResults[node.id]?.stop) {
-            try {
-              await nodeResults[node.id].stop();
-              console.log(
-                `Successfully stopped APM Version node: ${node.id}`
-              );
-            } catch (error) {
-              console.error(
-                `Error stopping APM Version node ${node.id}:`,
-                error
-              );
-            }
-          } else {
-            console.warn(
-              `No stop method found for APM Version node: ${node.id}`
-            );
-          }
-        }
-      }
-
-      // Clear all execution states and results
-      console.log("Clearing workflow execution state...");
-      set({
-        isWorkflowRunning: false,
-        nodeExecutionState: {},
-        nodeResults: {},
-      });
-
-      console.log("Workflow stopped successfully");
-    } catch (error) {
-      console.error("Error stopping workflow:", error);
-      set({ isWorkflowRunning: false });
-    }
+    set({
+      isWorkflowRunning: false,
+      nodeExecutionState: {},
+      nodeResults: {},
+    });
   },
 
   executeNode: async (nodeId, inputData) => {
     try {
-      const { nodes, edges, nodeResults } = get();
+      const { nodes, edges } = get();
       const node = nodes.find((n) => n.id === nodeId);
 
       if (!node) {
         throw new Error(`Node with id ${nodeId} not found`);
       }
 
-      console.log(
-        `Executing node '${node.data.label}' (${node.data.type}) with ID ${nodeId}`
-      );
-
-      // Update node state to running
       set((state) => ({
         nodeExecutionState: {
           ...state.nodeExecutionState,
@@ -507,618 +369,152 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         },
       }));
 
-      // Execute the node based on its type
       let result: any = undefined;
+      const { nodeExecutors } = await import("@/lib/utils/api-service");
 
       switch (node.data.type) {
-        case "apm-version-trigger": {
-          try {
-            // Import dynamically to avoid circular dependencies
-            const { nodeExecutors } = await import(
-              "@/lib/utils/api-service"
-            );
+        case "telegram-trigger": {
+          // Find all nodes connected to this telegram trigger
+          const connectedNodeIds = edges
+            .filter((e) => e.source === nodeId)
+            .map((e) => e.target);
+          const connectedNodes = nodes.filter((n) => connectedNodeIds.includes(n.id));
+          const connectedNodeTypes = connectedNodes.map((n) => n.data.type);
 
-            // Start the APM version polling process
-            console.log("Starting APM version polling process...");
-            const versionHandler = await nodeExecutors.executeAPMVersionTrigger(
-              node.data.config
-            );
+          const connectResult = await nodeExecutors.executeTelegramConnect(
+            node.data.config,
+            connectedNodeTypes
+          );
 
-            // Store the handler in nodeResults (mainly for the stop method)
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: versionHandler,
-              },
-            }));
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: connectResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
 
-            // Keep node in running state while polling is active
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "running",
-              },
-            }));
+          const chatId = node.data.config.chatId || connectResult.chatId;
+          const payload = { ...connectResult, chatId };
 
-            console.log(
-              "APM version node is now polling for package updates..."
-            );
-
-            // Start polling and set up callback for when a new version is detected
-            versionHandler.startPolling(async (versionData: any) => {
-              console.log('New version detected!', versionData);
-
-              // Update node state to success
-              set((state) => ({
-                nodeExecutionState: {
-                  ...state.nodeExecutionState,
-                  [nodeId]: "success",
-                },
-              }));
-
-              // Get outgoing edges from this node
-              const outgoingEdges = edges.filter(
-                (edge) => edge.source === nodeId
-              );
-
-              // Execute the next nodes with the version data
-              for (const edge of outgoingEdges) {
-                const targetNode = nodes.find(
-                  (n) => n.id === edge.target
-                );
-                console.log(
-                  `Passing version data to next node: ${targetNode?.data.label || edge.target}`
-                );
-                await get().executeNode(edge.target, versionData);
-              }
-            });
-
-            // Add the check method to the node result
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: {
-                  ...state.nodeResults[nodeId],
-                  checkCurrentVersion: versionHandler.checkCurrentVersion
-                }
-              }
-            }));
-
-            result = [];  // No immediate results, the node will keep polling
-          } catch (error) {
-            console.error(`Error initializing APM Version node ${nodeId}:`, error);
-
-            // Update node state to error
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "error",
-              },
-            }));
-
-            throw error;
+          // Only execute connected nodes if there are any
+          if (connectedNodeIds.length > 0) {
+            for (const edge of edges.filter((e) => e.source === nodeId)) {
+              await get().executeNode(edge.target, payload);
+            }
           }
+
+          result = payload;
           break;
         }
 
-        case "crypto-price-trigger": {
-          try {
-            // Import dynamically to avoid circular dependencies
-            const { nodeExecutors } = await import(
-              "@/lib/utils/api-service"
-            );
+        case "stellar-sdk": {
+          const stellarResult = await nodeExecutors.executeStellarSDK(
+            node.data.config,
+            { ...inputData, chatId: inputData?.chatId }
+          );
 
-            // Start the crypto price polling process
-            console.log("Starting crypto price polling process...");
-            const priceHandler = await nodeExecutors.executeCryptoPriceTrigger(
-              node.data.config
-            );
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: stellarResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
 
-            // Store the handler in nodeResults (mainly for the stop method)
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: priceHandler,
-              },
-            }));
+          const payload = {
+            ...stellarResult,
+            chatId: inputData?.chatId,
+            mode: "chatbot",
+          };
 
-            // Keep node in running state while polling is active
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "running",
-              },
-            }));
-
-            console.log(
-              "Crypto price node is now polling for price changes..."
-            );
-
-            // Start polling and set up callback for when price condition is met
-            priceHandler.startPolling(async (priceData: any) => {
-              console.log('Price condition triggered!', priceData);
-
-              // Update node state to success
-              set((state) => ({
-                nodeExecutionState: {
-                  ...state.nodeExecutionState,
-                  [nodeId]: "success",
-                },
-              }));
-
-              // Get outgoing edges from this node
-              const outgoingEdges = edges.filter(
-                (edge) => edge.source === nodeId
-              );
-
-              // Execute the next nodes with the price data
-              for (const edge of outgoingEdges) {
-                const targetNode = nodes.find(
-                  (n) => n.id === edge.target
-                );
-                console.log(
-                  `Passing price data to next node: ${targetNode?.data.label || edge.target}`
-                );
-                await get().executeNode(edge.target, priceData);
-              }
-            });
-
-            // Add the check method to the node result
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: {
-                  ...state.nodeResults[nodeId],
-                  checkPrice: priceHandler.checkPrice
-                }
-              }
-            }));
-
-            result = [];  // No immediate results, the node will keep polling
-          } catch (error) {
-            console.error(`Error initializing Crypto Price node ${nodeId}:`, error);
-
-            // Update node state to error
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "error",
-              },
-            }));
-
-            throw error;
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, payload);
           }
+
+          result = payload;
           break;
         }
 
-        case "telegram-receive": {
-          try {
-            // Import dynamically to avoid circular dependencies
-            const { nodeExecutors } = await import(
-              "@/lib/utils/api-service"
-            );
+        case "wallet-integration": {
+          const walletResult = await nodeExecutors.executeWalletIntegration(
+            node.data.config,
+            inputData
+          );
 
-            // Start the Telegram receive process
-            console.log("Starting Telegram receive process...");
-            const telegramHandler =
-              await nodeExecutors.executeTelegramReceive(
-                node.data.config
-              );
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: walletResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
 
-            // Store the handler in nodeResults (mainly for the stop method)
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: telegramHandler,
-              },
-            }));
-
-            // Keep node in running state while the bot is active
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "running",
-              },
-            }));
-
-            console.log(
-              "Telegram node is now waiting for changes in recent files..."
-            );
-
-            // Also add a method to manually check for recent files
-            const checkRecentFiles = async () => {
-              console.log(
-                "Manually checking for recent files..."
-              );
-              if (get().isWorkflowRunning) {
-                const recentFiles =
-                  await telegramHandler.processRecentFiles();
-                if (recentFiles.length > 0) {
-                  console.log(
-                    `Found new file, passing to connected nodes...`
-                  );
-                  // Show success state temporarily
-                  set((state) => ({
-                    nodeExecutionState: {
-                      ...state.nodeExecutionState,
-                      [nodeId]: "success",
-                    },
-                  }));
-
-                  // Get outgoing edges from this node
-                  const outgoingEdges = edges.filter(
-                    (edge) => edge.source === nodeId
-                  );
-                  console.log(
-                    `Found ${outgoingEdges.length} outgoing edges from Telegram node`
-                  );
-
-                  const latestFile = recentFiles[0]; // There will only be one file in the array if there's a change
-                  console.log(`Processing latest file: ${latestFile.fileName || latestFile.id}`);
-
-                  // Determine node types to pass different context to each node
-                  const arweaveNodes: any[] = [];
-                  const telegramNodes: any[] = [];
-
-                  outgoingEdges.forEach(edge => {
-                    const targetNode = nodes.find(n => n.id === edge.target);
-                    if (targetNode) {
-                      if (targetNode.data.type === 'arweave-upload') {
-                        arweaveNodes.push(edge);
-                      } else if (targetNode.data.type === 'telegram') {
-                        telegramNodes.push(edge);
-                      }
-                    }
-                  });
-
-                  // Execute telegram nodes first with "parallel before" context
-                  const telegramPromises = telegramNodes.map((edge: any) => {
-                    const targetNode = nodes.find(n => n.id === edge.target);
-                    console.log(`Sending "parallel before" message to Telegram node: ${targetNode?.data.label || edge.target}`);
-                    return get().executeNode(edge.target, {
-                      ...latestFile,
-                      messageContext: 'before',
-                      originalMessage: node.data.config.message || 'parallel before'
-                    });
-                  });
-
-                  // Execute all Telegram nodes and wait for completion
-                  if (telegramPromises.length > 0) {
-                    console.log('Sending all Telegram messages first...');
-                    await Promise.all(telegramPromises);
-                    console.log('All Telegram messages sent successfully');
-                  }
-
-                  // Execute arweave nodes without waiting for them to complete
-                  arweaveNodes.forEach((edge: any) => {
-                    const targetNode = nodes.find(n => n.id === edge.target);
-                    console.log(`Starting file upload to Arweave node (background): ${targetNode?.data.label || edge.target}`);
-                    // Don't await here - let it run in the background
-                    get().executeNode(edge.target, latestFile)
-                      .then(() => console.log(`Arweave upload completed for node: ${targetNode?.data.label || edge.target}`))
-                      .catch(err => console.error(`Error in background Arweave upload: ${err.message}`));
-                  });
-
-                  // After 2 seconds, go back to running state
-                  setTimeout(() => {
-                    if (get().isWorkflowRunning) {
-                      set(state => ({
-                        nodeExecutionState: {
-                          ...state.nodeExecutionState,
-                          [nodeId]: 'running'
-                        }
-                      }));
-                    }
-                  }, 2000);
-                } else {
-                  console.log('No new files found');
-                }
-              }
-            };
-
-            // Add the check method to the node result
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: {
-                  ...state.nodeResults[nodeId],
-                  checkRecentFiles
-                }
-              }
-            }));
-
-            // Start polling for new files and set up the callback
-            console.log('Starting to poll for new files...');
-            telegramHandler.startPolling(async (fileData: any) => {
-              console.log('New file detected from Telegram:', fileData);
-
-              // When a new file is detected, temporarily show success state
-              set(state => ({
-                nodeExecutionState: {
-                  ...state.nodeExecutionState,
-                  [nodeId]: 'success'
-                }
-              }));
-
-              // Get outgoing edges and forward the latest file
-              const outgoingEdges = get().edges.filter(edge => edge.source === nodeId);
-
-              // Determine node types to pass different context to each node
-              const arweaveNodes: any[] = [];
-              const telegramNodes: any[] = [];
-
-              outgoingEdges.forEach(edge => {
-                const targetNode = get().nodes.find(n => n.id === edge.target);
-                if (targetNode) {
-                  if (targetNode.data.type === 'arweave-upload') {
-                    arweaveNodes.push(edge);
-                  } else if (targetNode.data.type === 'telegram') {
-                    telegramNodes.push(edge);
-                  }
-                }
-              });
-
-              // Execute telegram nodes first with "parallel before" context
-              const telegramPromises = telegramNodes.map((edge: any) => {
-                const targetNode = get().nodes.find(n => n.id === edge.target);
-                console.log(`Sending "parallel before" message to Telegram node: ${targetNode?.data.label || edge.target}`);
-                return get().executeNode(edge.target, {
-                  ...fileData,
-                  messageContext: 'before',
-                  originalMessage: node.data.config.message || 'parallel before'
-                });
-              });
-
-              // Execute all Telegram nodes and wait for completion
-              if (telegramPromises.length > 0) {
-                console.log('Sending all Telegram messages first...');
-                await Promise.all(telegramPromises);
-                console.log('All Telegram messages sent successfully');
-              }
-
-              // Execute arweave nodes without waiting for them to complete
-              arweaveNodes.forEach((edge: any) => {
-                const targetNode = nodes.find(n => n.id === edge.target);
-                console.log(`Starting file upload to Arweave node (background): ${targetNode?.data.label || edge.target}`);
-                // Don't await here - let it run in the background
-                get().executeNode(edge.target, fileData)
-                  .then(() => console.log(`Arweave upload completed for node: ${targetNode?.data.label || edge.target}`))
-                  .catch(err => console.error(`Error in background Arweave upload: ${err.message}`));
-              });
-
-              // After 2 seconds, go back to running state
-              setTimeout(() => {
-                if (get().isWorkflowRunning) {
-                  set(state => ({
-                    nodeExecutionState: {
-                      ...state.nodeExecutionState,
-                      [nodeId]: 'running'
-                    }
-                  }));
-                }
-              }, 2000);
-            });
-
-            result = [];  // No immediate results, the node will keep polling
-          } catch (error) {
-            console.error(`Error initializing Telegram receive node ${nodeId}:`, error);
-
-            // Update node state to error
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "error",
-              },
-            }));
-
-            throw error;
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...walletResult });
           }
+
+          result = walletResult;
           break;
         }
 
-        case "arweave-upload": {
-          try {
-            if (!inputData) {
-              console.error(
-                "No file data provided to Arweave upload node"
-              );
-              throw new Error("No file data provided to upload");
-            }
+        case "telegram-send": {
+          const config = {
+            ...node.data.config,
+            chatId: node.data.config.chatId || inputData?.chatId,
+          };
 
-            console.log(
-              `Arweave upload node received input:`,
-              inputData
-            );
+          const sendResult = await nodeExecutors.executeTelegramSend(
+            config,
+            inputData
+          );
 
-            // Import dynamically to avoid circular dependencies
-            const { nodeExecutors } = await import(
-              "@/lib/utils/api-service"
-            );
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: sendResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
 
-            // Upload the file to Arweave
-            console.log(`Uploading file to Arweave...`);
-            const uploadResult =
-              await nodeExecutors.executeArweaveUpload(
-                node.data.config,
-                inputData
-              );
-            console.log(`Upload successful:`, uploadResult);
-
-            // Log the actual Arweave URL from the result
-            if (uploadResult && uploadResult.arweave_url) {
-              console.log(`Arweave URL generated: ${uploadResult.arweave_url}`);
-            } else if (uploadResult && uploadResult.data && uploadResult.data.arweave_url) {
-              console.log(`Arweave URL in data property: ${uploadResult.data.arweave_url}`);
-            } else {
-              console.warn(`No Arweave URL found in upload result:`, uploadResult);
-            }
-
-            // Store the result
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: uploadResult,
-              },
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "success",
-              },
-            }));
-
-            // Get outgoing edges from this node
-            const outgoingEdges = edges.filter(
-              (edge) => edge.source === nodeId
-            );
-
-            // Execute the next nodes with the upload result as input
-            for (const edge of outgoingEdges) {
-              const targetNode = nodes.find(
-                (n) => n.id === edge.target
-              );
-              console.log(
-                `Passing Arweave result to node: ${targetNode?.data.label || edge.target}`
-              );
-
-              // Check if the target node is a Telegram node
-              if (targetNode?.data.type === 'telegram') {
-                console.log('Target is a Telegram node, appending arweave_url to inputData');
-
-                // Create the input data for Telegram with the Arweave URL
-                const arweaveUrl = uploadResult.arweave_url ||
-                  (uploadResult.data && uploadResult.data.arweave_url);
-
-                if (!arweaveUrl) {
-                  console.warn('No Arweave URL found to pass to Telegram node!');
-                }
-
-                // Pass the original inputData plus the arweave_url to the Telegram node
-                const telegramInputData = {
-                  ...(inputData || {}),
-                  arweave_url: arweaveUrl,
-                  arweaveUrl: arweaveUrl, // Also add with camelCase for convenience
-                  upload_result: uploadResult, // Include the full result for flexibility
-                  isFromArweaveNode: true, // Add flag to indicate this data is coming directly from an Arweave node
-                };
-
-                console.log('Telegram input data prepared:', telegramInputData);
-
-                await get().executeNode(edge.target, telegramInputData);
-              } else {
-                // For other node types, just pass the upload result as is
-                await get().executeNode(edge.target, uploadResult);
-              }
-            }
-
-            result = uploadResult;
-          } catch (error) {
-            console.error(`Error in Arweave upload node:`, error);
-
-            // Update node state to error
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "error",
-              },
-            }));
-
-            throw error;
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...sendResult });
           }
+
+          result = sendResult;
           break;
         }
 
-        case "telegram": {
-          try {
-            console.log(`Executing Telegram send node (${nodeId})`);
-            console.log(`Input data for Telegram node:`, inputData);
-
-            // Check if we have Arweave URL in the input data
-            if (inputData && (inputData.arweave_url || inputData.arweaveUrl)) {
-              console.log(`Detected Arweave URL in input: ${inputData.arweave_url || inputData.arweaveUrl}`);
-            } else if (inputData && inputData.upload_result && inputData.upload_result.arweave_url) {
-              console.log(`Detected Arweave URL in upload_result: ${inputData.upload_result.arweave_url}`);
-            } else {
-              console.log(`No Arweave URL detected in input data`);
-            }
-
-            // Import dynamically to avoid circular dependencies
-            const { nodeExecutors } = await import(
-              "@/lib/utils/api-service"
-            );
-
-            // Updated message - no need to warn about missing template
-            // since we'll automatically append the URL if available
-            if (node.data.config.message && node.data.config.message.includes('{arweave_url}')) {
-              console.log(`Message contains {arweave_url} template: "${node.data.config.message}"`);
-              console.log(`URL will be inserted at template position`);
-            } else if (inputData && inputData.isFromArweaveNode && (inputData.arweave_url || inputData.arweaveUrl ||
-              (inputData.upload_result && inputData.upload_result.arweave_url))) {
-              console.log(`Message does not contain {arweave_url} template but data is from Arweave node`);
-              console.log(`URL will be automatically appended to the message`);
-            } else if (inputData && !inputData.isFromArweaveNode && (inputData.arweave_url || inputData.arweaveUrl ||
-              (inputData.upload_result && inputData.upload_result.arweave_url))) {
-              console.log(`Message does not contain {arweave_url} template and data is not from Arweave node`);
-              console.log(`URL will NOT be automatically appended. Use {arweave_url} in your message template to include it.`);
-            }
-
-            // Execute the Telegram send operation
-            console.log(
-              `Sending Telegram message with config:`,
-              node.data.config
-            );
-            const sendResult =
-              await nodeExecutors.executeTelegramSend(
-                node.data.config,
-                inputData
-              );
-            console.log(`Message sent successfully:`, sendResult);
-
-            // Store the result
-            set((state) => ({
-              nodeResults: {
-                ...state.nodeResults,
-                [nodeId]: sendResult,
-              },
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "success",
-              },
-            }));
-
-            // Get outgoing edges from this node
-            const outgoingEdges = edges.filter(
-              (edge) => edge.source === nodeId
-            );
-
-            // Execute the next nodes with the send result as input
-            for (const edge of outgoingEdges) {
-              const targetNode = nodes.find(
-                (n) => n.id === edge.target
-              );
-              console.log(
-                `Passing Telegram send result to node: ${targetNode?.data.label || edge.target}`
-              );
-              await get().executeNode(edge.target, sendResult);
-            }
-
-            result = sendResult;
-          } catch (error) {
-            console.error(`Error in Telegram send node:`, error);
-
-            // Update node state to error
-            set((state) => ({
-              nodeExecutionState: {
-                ...state.nodeExecutionState,
-                [nodeId]: "error",
-              },
-            }));
-
-            throw error;
+        case "delay": {
+          const delay = parseInt(node.data.config?.delay || "5", 10) * 1000;
+          await new Promise((r) => setTimeout(r, delay));
+          set((state) => ({
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+          result = { delayed: delay };
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, delayed: delay });
           }
           break;
         }
 
         default: {
-          console.error(`Unknown node type: ${node.data.type}`);
+          if (
+            ["discord-trigger", "whatsapp-trigger", "anchor-onramp", "anchor-offramp"].includes(
+              node.data.type
+            )
+          ) {
+            set((state) => ({
+              nodeExecutionState: {
+                ...state.nodeExecutionState,
+                [nodeId]: "error",
+              },
+            }));
+            throw new Error(`Node type "${node.data.type}" not yet implemented`);
+          }
           throw new Error(`Unknown node type: ${node.data.type}`);
         }
       }
@@ -1136,11 +532,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  // Save/Load
-  saveWorkflow: () => {
-    // Implementation needed
-  },
-  loadWorkflow: () => {
-    // Implementation needed
-  },
+  saveWorkflow: () => {},
+  loadWorkflow: () => {},
 }));
