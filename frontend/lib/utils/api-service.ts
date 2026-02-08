@@ -47,8 +47,8 @@ export const telegramApi = {
     return telegramApi.sendMessage(chatId, message);
   },
 
-  // Send message when Wallet Integration is connected
-  sendWalletSetupMessage: async (chatId: string, walletUrl: string) => {
+  // Send message when Wallet Integration is connected (Freighter)
+  sendWalletSetupMessage: async (chatId: string, walletUrl: string, network: string = "testnet") => {
     const message =
       `👛 **Wallet Integration Enabled!**\n\n` +
       `Connect your Freighter wallet to interact with Stellar:\n\n` +
@@ -57,7 +57,27 @@ export const telegramApi = {
       `• View your balances\n` +
       `• Sign transactions\n` +
       `• Interact with Stellar dApps\n\n` +
+      `Network: ${network}\n\n` +
       `_Powered by Stellar_`;
+    return telegramApi.sendMessage(chatId, message);
+  },
+
+  // Send message when Telegram Wallet is created
+  sendTelegramWalletMessage: async (chatId: string, publicKey: string, isNew: boolean, network: string = "testnet") => {
+    const message = isNew
+      ? `🎉 **Your Stellar Wallet is Ready!**\n\n` +
+        `**Address:**\n\`${publicKey}\`\n\n` +
+        `📱 **Wallet Commands:**\n` +
+        `/mybalance - Check your balance\n` +
+        `/mywallet - Show your address\n` +
+        `/send <address> <amount> - Send XLM\n` +
+        `/fundwallet - Get free testnet XLM\n\n` +
+        `Network: ${network}\n\n` +
+        `_Your wallet is securely stored in the bot._`
+      : `👛 **Wallet Already Created!**\n\n` +
+        `**Address:**\n\`${publicKey}\`\n\n` +
+        `Use /mybalance to check your balance.\n` +
+        `Network: ${network}`;
     return telegramApi.sendMessage(chatId, message);
   },
 
@@ -149,9 +169,77 @@ export const stellarApi = {
   },
 };
 
+// Telegram Wallet API - for in-bot wallets
+export const telegramWalletApi = {
+  // Create wallet for a chat
+  createWallet: async (chatId: string) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      });
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to create wallet" };
+    }
+  },
+
+  // Get wallet info
+  getWallet: async (chatId: string) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}`);
+      if (!response.ok) {
+        const data = await response.json();
+        return { success: false, error: data.error || "Wallet not found" };
+      }
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to get wallet" };
+    }
+  },
+
+  // Get wallet balance (uses the wallet's own address)
+  getBalance: async (chatId: string) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/balance`);
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to get balance" };
+    }
+  },
+
+  // Fund wallet (testnet only)
+  fundWallet: async (chatId: string) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/fund`, {
+        method: "POST",
+      });
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to fund wallet" };
+    }
+  },
+
+  // Send XLM from wallet
+  sendXLM: async (chatId: string, destination: string, amount: string) => {
+    try {
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination, amount }),
+      });
+      return response.json();
+    } catch (error) {
+      return { success: false, error: "Failed to send XLM" };
+    }
+  },
+};
+
 // Node executors
 export const nodeExecutors = {
-  // Execute Telegram trigger - now accepts connectedNodeTypes to determine behavior
+  // Execute Telegram trigger - registers session and sends initial connection message
+  // Connected blocks will send their own detailed messages
   executeTelegramConnect: async (config: any, connectedNodeTypes: string[] = []) => {
     const chatId = config.chatId?.trim();
     if (!chatId) {
@@ -181,27 +269,21 @@ export const nodeExecutors = {
     if (connectedNodeTypes.length === 0) {
       // No blocks connected - just welcome message
       result = await telegramApi.sendWelcomeMessage(chatId);
-    } else if (hasChatbot && !hasWallet) {
-      // Chatbot enabled only
-      result = await telegramApi.sendChatbotEnabledMessage(chatId);
-    } else if (hasWallet && !hasChatbot) {
-      // Wallet enabled only - send wallet setup message
-      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
-      result = await telegramApi.sendWalletSetupMessage(chatId, walletUrl);
-    } else if (hasChatbot && hasWallet) {
-      // Both enabled - send combined message with wallet link
-      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
-      const message =
-        `🚀 **Full Stellar Integration Activated!**\n\n` +
-        `✅ **AI Chatbot** - Ask me anything about Stellar\n` +
-        `✅ **Wallet Integration** - Connect your Freighter wallet\n\n` +
-        `👛 **Connect Wallet:** [Click here](${walletUrl})\n\n` +
-        `💬 Type your question or use /balance <address>\n\n` +
-        `_Powered by Stellar_`;
-      result = await telegramApi.sendMessage(chatId, message);
     } else {
-      // Other combinations (like telegram-send only)
-      result = await telegramApi.sendAuthMessage(chatId, config.label || "Workflow");
+      // Blocks are connected - send brief connection confirmation
+      // The connected blocks will send their own detailed messages
+      const enabledFeatures = [];
+      if (hasChatbot) enabledFeatures.push("Stellar AI Chatbot");
+      if (hasWallet) enabledFeatures.push("Wallet Integration");
+      if (hasTelegramSend) enabledFeatures.push("Notifications");
+
+      const message =
+        `🚀 **StellrFlow Connected!**\n\n` +
+        `Your workflow is now active with:\n` +
+        enabledFeatures.map(f => `✅ ${f}`).join('\n') +
+        `\n\n_Setting up features..._`;
+
+      result = await telegramApi.sendMessage(chatId, message);
     }
 
     if (!result.success) {
@@ -244,8 +326,22 @@ export const nodeExecutors = {
     }
 
     if (operation === "chatbot") {
-      // Chatbot mode is now handled by the backend based on registered session
-      // Just confirm activation
+      // Send chatbot activation message to user
+      const message =
+        `🤖 **Stellar AI Chatbot Activated!**\n\n` +
+        `I can now answer your questions about Stellar!\n\n` +
+        `**Try asking:**\n` +
+        `• What is Stellar?\n` +
+        `• How does Soroban work?\n` +
+        `• What are Stellar anchors?\n` +
+        `• Tell me about XLM\n\n` +
+        `**Commands:**\n` +
+        `/balance <address> - Check any address balance\n` +
+        `/help - Show all commands\n\n` +
+        `_Just type your question and I'll help!_`;
+
+      await telegramApi.sendMessage(chatId, message);
+
       return {
         success: true,
         operation: "chatbot",
@@ -265,6 +361,15 @@ export const nodeExecutors = {
       throw new Error(result.error || "Failed to fetch balance");
     }
 
+    // Send balance result to user
+    const balanceMessage =
+      `💰 **Balance Check**\n\n` +
+      `**Address:** \`${destination.slice(0, 8)}...${destination.slice(-8)}\`\n` +
+      `**Balance:** ${result.balance} XLM\n\n` +
+      `Network: ${config.network || "testnet"}`;
+
+    await telegramApi.sendMessage(chatId, balanceMessage);
+
     return {
       success: true,
       operation: "balance",
@@ -281,15 +386,110 @@ export const nodeExecutors = {
       throw new Error("Connect this block to a Telegram trigger first.");
     }
 
-    // Generate wallet connection URL
-    const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}`;
+    const walletProvider = config.walletProvider || "freighter";
+    const network = config.network || "testnet";
+
+    if (walletProvider === "telegram") {
+      // Telegram Wallet - create an in-bot wallet
+      const createResult = await telegramWalletApi.createWallet(chatId);
+
+      if (!createResult.success) {
+        throw new Error(createResult.error || "Failed to create Telegram wallet");
+      }
+
+      // Send message to user with wallet info
+      const message = createResult.isNew
+        ? `🎉 **Your Stellar Wallet is Ready!**\n\n` +
+          `**Address:**\n\`${createResult.publicKey}\`\n\n` +
+          `📱 **Wallet Commands:**\n` +
+          `/mybalance - Check your balance\n` +
+          `/mywallet - Show your address\n` +
+          `/send <address> <amount> - Send XLM\n` +
+          `/fundwallet - Get free testnet XLM\n\n` +
+          `Network: ${network}\n\n` +
+          `_Your wallet is securely stored in the bot._`
+        : `👛 **Wallet Already Created!**\n\n` +
+          `**Address:**\n\`${createResult.publicKey}\`\n\n` +
+          `Use /mybalance to check your balance.`;
+
+      await telegramApi.sendMessage(chatId, message);
+
+      return {
+        success: true,
+        mode: "telegram-wallet",
+        walletProvider: "telegram",
+        publicKey: createResult.publicKey,
+        isNew: createResult.isNew,
+        chatId,
+        network,
+        message: createResult.isNew ? "Telegram wallet created" : "Telegram wallet already exists",
+      };
+    } else {
+      // Freighter Wallet - generate connection URL
+      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}&network=${network}`;
+
+      // Send message to user with Freighter connection link
+      const message =
+        `🦊 **Freighter Wallet Integration**\n\n` +
+        `Connect your Freighter browser extension wallet to Stellar:\n\n` +
+        `👉 [Click here to connect](${walletUrl})\n\n` +
+        `**After connecting you can:**\n` +
+        `• View your wallet balances\n` +
+        `• Sign and approve transactions\n` +
+        `• Interact with Stellar dApps\n\n` +
+        `**Requirements:**\n` +
+        `• Freighter extension installed\n` +
+        `• Open link in browser with Freighter\n\n` +
+        `Network: ${network}\n\n` +
+        `🔗 Get Freighter: https://freighter.app`;
+
+      await telegramApi.sendMessage(chatId, message);
+
+      return {
+        success: true,
+        mode: "freighter-wallet",
+        walletProvider: "freighter",
+        chatId,
+        walletUrl,
+        network,
+        message: "Freighter connection link sent to user",
+      };
+    }
+  },
+
+  // NEW: Get wallet balance - for Telegram wallet (uses stored wallet address, NOT SDK balance)
+  executeWalletBalance: async (config: any, inputData?: any) => {
+    const chatId = inputData?.chatId || config.chatId;
+    if (!chatId) {
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
+    }
+
+    // Get balance of user's own Telegram wallet
+    const result = await telegramWalletApi.getBalance(chatId);
+
+    if (!result.success) {
+      throw new Error(result.error || "Failed to get wallet balance");
+    }
+
+    // Send balance to user in Telegram
+    const message =
+      `💰 **Your Wallet Balance**\n\n` +
+      `**XLM:** ${result.xlmBalance}\n` +
+      (result.otherBalances?.length > 0
+        ? `\n**Other Assets:**\n${result.otherBalances.map((b: any) => `• ${b.balance} ${b.asset}`).join('\n')}\n`
+        : "") +
+      `\nAddress: \`${result.publicKey?.slice(0, 8)}...${result.publicKey?.slice(-8)}\`\n` +
+      `Network: ${result.network}`;
+
+    await telegramApi.sendMessage(chatId, message);
 
     return {
       success: true,
-      mode: "wallet",
       chatId,
-      walletUrl,
-      message: "Wallet integration activated. User will receive Freighter connection link.",
+      publicKey: result.publicKey,
+      xlmBalance: result.xlmBalance,
+      otherBalances: result.otherBalances,
+      network: result.network,
     };
   },
 };

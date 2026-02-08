@@ -12,7 +12,7 @@ import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { Horizon, Networks } from "@stellar/stellar-sdk";
+import { Horizon, Networks, Keypair, TransactionBuilder, Operation, Asset, BASE_FEE } from "@stellar/stellar-sdk";
 
 dotenv.config();
 
@@ -46,6 +46,13 @@ const userChatIds = new Map<string, string>();
 const activeSessions = new Map<string, {
   features: string[];
   registeredAt: Date;
+}>();
+
+// Telegram Wallet storage - in-memory for demo (use database in production)
+const userWallets = new Map<string, {
+  publicKey: string;
+  secretKey: string;
+  createdAt: Date;
 }>();
 
 // Stellar Horizon client (for balance queries)
@@ -95,8 +102,306 @@ function initBot() {
         "/start - Start the bot\n" +
         "/register - Register & get chat ID\n" +
         "/balance <address> - Check Stellar account balance (XLM)\n" +
-        "/help - Show this message"
+        "\n**Telegram Wallet:**\n" +
+        "/createwallet - Create your in-bot Stellar wallet\n" +
+        "/mywallet - Show your wallet address\n" +
+        "/mybalance - Check your wallet balance\n" +
+        "/send <address> <amount> - Send XLM from your wallet\n" +
+        "/fundwallet - Fund your testnet wallet (testnet only)\n" +
+        "/help - Show this message",
+      { parse_mode: "Markdown" }
     );
+  });
+
+  // === TELEGRAM WALLET COMMANDS ===
+
+  // Create wallet
+  bot.onText(/\/createwallet/, async (msg) => {
+    const chatId = msg.chat.id.toString();
+
+    // Check if user already has a wallet
+    if (userWallets.has(chatId)) {
+      const wallet = userWallets.get(chatId)!;
+      bot.sendMessage(
+        chatId,
+        `👛 You already have a wallet!\n\n` +
+          `**Address:** \`${wallet.publicKey}\`\n\n` +
+          `Use /mybalance to check your balance.`,
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    // Create new Stellar keypair
+    const keypair = Keypair.random();
+    const publicKey = keypair.publicKey();
+    const secretKey = keypair.secret();
+
+    // Store wallet
+    userWallets.set(chatId, {
+      publicKey,
+      secretKey,
+      createdAt: new Date(),
+    });
+
+    bot.sendMessage(
+      chatId,
+      `🎉 **Wallet Created!**\n\n` +
+        `**Your Stellar Address:**\n\`${publicKey}\`\n\n` +
+        `⚠️ **Important:** Your wallet is stored securely. To use it on testnet:\n` +
+        `1. Use /fundwallet to get free testnet XLM\n` +
+        `2. Or send XLM to your address from another wallet\n\n` +
+        `Use /mybalance to check your balance anytime.`,
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  // Show wallet address
+  bot.onText(/\/mywallet/, (msg) => {
+    const chatId = msg.chat.id.toString();
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ You don't have a wallet yet. Use /createwallet to create one.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    bot.sendMessage(
+      chatId,
+      `👛 **Your Stellar Wallet**\n\n` +
+        `**Address:**\n\`${wallet.publicKey}\`\n\n` +
+        `📋 Copy this address to receive XLM or other Stellar assets.\n` +
+        `Network: ${STELLAR_NETWORK}`,
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  // Check own wallet balance
+  bot.onText(/\/mybalance/, async (msg) => {
+    const chatId = msg.chat.id.toString();
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ You don't have a wallet yet. Use /createwallet to create one.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    try {
+      const account = await horizon.loadAccount(wallet.publicKey);
+      const xlmBalance = account.balances.find((b) => b.asset_type === "native");
+      const balance = xlmBalance && "balance" in xlmBalance ? xlmBalance.balance : "0";
+
+      // Get other asset balances
+      const otherBalances = account.balances
+        .filter((b) => b.asset_type !== "native" && "asset_code" in b)
+        .map((b: any) => `• ${b.balance} ${b.asset_code}`)
+        .join("\n");
+
+      bot.sendMessage(
+        chatId,
+        `💰 **Your Wallet Balance**\n\n` +
+          `**XLM:** ${balance}\n` +
+          (otherBalances ? `\n**Other Assets:**\n${otherBalances}` : "") +
+          `\n\nAddress: \`${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}\``,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        bot.sendMessage(
+          chatId,
+          `💰 **Your Wallet Balance**\n\n` +
+            `**XLM:** 0 (account not funded)\n\n` +
+            `💡 Your account needs at least 1 XLM to be activated on Stellar.\n` +
+            `Use /fundwallet to get free testnet XLM.`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ Error checking balance: ${err.message || "Try again later"}`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    }
+  });
+
+  // Fund wallet with testnet XLM
+  bot.onText(/\/fundwallet/, async (msg) => {
+    const chatId = msg.chat.id.toString();
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ You don't have a wallet yet. Use /createwallet to create one.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    if (STELLAR_NETWORK !== "testnet") {
+      bot.sendMessage(
+        chatId,
+        "❌ Funding is only available on testnet. You're on mainnet.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    try {
+      bot.sendMessage(chatId, "⏳ Requesting testnet XLM...");
+
+      const response = await fetch(
+        `https://friendbot.stellar.org?addr=${wallet.publicKey}`
+      );
+
+      if (response.ok) {
+        bot.sendMessage(
+          chatId,
+          `✅ **Wallet Funded!**\n\n` +
+            `Your wallet has been credited with 10,000 testnet XLM.\n\n` +
+            `Use /mybalance to see your balance.`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ Failed to fund wallet. It might already be funded or friendbot is busy. Try again later.`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } catch (err: any) {
+      bot.sendMessage(
+        chatId,
+        `❌ Error: ${err.message || "Failed to fund wallet"}`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // Send XLM from wallet
+  bot.onText(/\/send(?:\s+(\S+)\s+(\S+))?/, async (msg, match) => {
+    const chatId = msg.chat.id.toString();
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ You don't have a wallet yet. Use /createwallet to create one.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const destAddress = match?.[1]?.trim();
+    const amountStr = match?.[2]?.trim();
+
+    if (!destAddress || !amountStr) {
+      bot.sendMessage(
+        chatId,
+        "**Usage:** /send <destination_address> <amount>\n\n" +
+          "**Example:** /send GABC...XYZ 10\n\n" +
+          "This will send 10 XLM from your wallet.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      bot.sendMessage(chatId, "❌ Invalid amount. Please enter a positive number.");
+      return;
+    }
+
+    try {
+      bot.sendMessage(chatId, "⏳ Processing transaction...");
+
+      // Load sender account
+      const sourceKeypair = Keypair.fromSecret(wallet.secretKey);
+      const sourceAccount = await horizon.loadAccount(wallet.publicKey);
+
+      // Check if destination exists
+      let destinationExists = true;
+      try {
+        await horizon.loadAccount(destAddress);
+      } catch {
+        destinationExists = false;
+      }
+
+      // Build transaction
+      const networkPassphrase = STELLAR_NETWORK === "testnet" 
+        ? Networks.TESTNET 
+        : Networks.PUBLIC;
+
+      let transaction;
+      if (destinationExists) {
+        // Regular payment
+        transaction = new TransactionBuilder(sourceAccount, {
+          fee: BASE_FEE,
+          networkPassphrase,
+        })
+          .addOperation(
+            Operation.payment({
+              destination: destAddress,
+              asset: Asset.native(),
+              amount: amount.toFixed(7),
+            })
+          )
+          .setTimeout(30)
+          .build();
+      } else {
+        // Create account operation for new accounts
+        if (amount < 1) {
+          bot.sendMessage(
+            chatId,
+            "❌ Destination account doesn't exist. Minimum 1 XLM required to create it."
+          );
+          return;
+        }
+        transaction = new TransactionBuilder(sourceAccount, {
+          fee: BASE_FEE,
+          networkPassphrase,
+        })
+          .addOperation(
+            Operation.createAccount({
+              destination: destAddress,
+              startingBalance: amount.toFixed(7),
+            })
+          )
+          .setTimeout(30)
+          .build();
+      }
+
+      // Sign and submit
+      transaction.sign(sourceKeypair);
+      const result = await horizon.submitTransaction(transaction);
+
+      bot.sendMessage(
+        chatId,
+        `✅ **Transaction Successful!**\n\n` +
+          `**Sent:** ${amount} XLM\n` +
+          `**To:** \`${destAddress.slice(0, 8)}...${destAddress.slice(-8)}\`\n\n` +
+          `🔗 [View on Explorer](https://stellar.expert/explorer/${STELLAR_NETWORK}/tx/${result.hash})`,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.extras?.result_codes 
+        ? JSON.stringify(err.response.data.extras.result_codes)
+        : err.message || "Transaction failed";
+      bot.sendMessage(
+        chatId,
+        `❌ Transaction failed: ${errorMsg}`,
+        { parse_mode: "Markdown" }
+      );
+    }
   });
 
   // Chatbot mode: answer Stellar questions (only when chatbot feature is enabled)
@@ -412,6 +717,271 @@ app.delete("/api/session/:chatId", (req, res) => {
     success: true,
     message: "Session cleared",
   });
+});
+
+// === TELEGRAM WALLET API ENDPOINTS ===
+
+// Create wallet for a chat
+app.post("/api/wallet/create", (req, res) => {
+  try {
+    const { chatId } = req.body;
+
+    if (!chatId) {
+      return res.status(400).json({ error: "chatId is required" });
+    }
+
+    const chatIdStr = String(chatId).trim();
+
+    // Check if wallet already exists
+    if (userWallets.has(chatIdStr)) {
+      const wallet = userWallets.get(chatIdStr)!;
+      return res.json({
+        success: true,
+        publicKey: wallet.publicKey,
+        message: "Wallet already exists",
+        isNew: false,
+      });
+    }
+
+    // Create new wallet
+    const keypair = Keypair.random();
+    userWallets.set(chatIdStr, {
+      publicKey: keypair.publicKey(),
+      secretKey: keypair.secret(),
+      createdAt: new Date(),
+    });
+
+    return res.json({
+      success: true,
+      publicKey: keypair.publicKey(),
+      message: "Wallet created successfully",
+      isNew: true,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to create wallet",
+    });
+  }
+});
+
+// Get wallet info
+app.get("/api/wallet/:chatId", (req, res) => {
+  const { chatId } = req.params;
+  const wallet = userWallets.get(chatId);
+
+  if (!wallet) {
+    return res.status(404).json({
+      success: false,
+      error: "No wallet found for this chat",
+    });
+  }
+
+  return res.json({
+    success: true,
+    publicKey: wallet.publicKey,
+    createdAt: wallet.createdAt,
+  });
+});
+
+// Get wallet balance (uses stored wallet address)
+app.get("/api/wallet/:chatId/balance", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      return res.status(404).json({
+        success: false,
+        error: "No wallet found for this chat. Create one first.",
+      });
+    }
+
+    try {
+      const account = await horizon.loadAccount(wallet.publicKey);
+      const xlmBalance = account.balances.find((b) => b.asset_type === "native");
+      const balance = xlmBalance && "balance" in xlmBalance ? xlmBalance.balance : "0";
+
+      const otherBalances = account.balances
+        .filter((b) => b.asset_type !== "native" && "asset_code" in b)
+        .map((b: any) => ({
+          asset: b.asset_code,
+          balance: b.balance,
+          issuer: b.asset_issuer,
+        }));
+
+      return res.json({
+        success: true,
+        publicKey: wallet.publicKey,
+        xlmBalance: balance,
+        otherBalances,
+        network: STELLAR_NETWORK,
+      });
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        return res.json({
+          success: true,
+          publicKey: wallet.publicKey,
+          xlmBalance: "0",
+          otherBalances: [],
+          network: STELLAR_NETWORK,
+          message: "Account not funded yet",
+        });
+      }
+      throw err;
+    }
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to get balance",
+    });
+  }
+});
+
+// Fund wallet (testnet only)
+app.post("/api/wallet/:chatId/fund", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      return res.status(404).json({
+        success: false,
+        error: "No wallet found for this chat",
+      });
+    }
+
+    if (STELLAR_NETWORK !== "testnet") {
+      return res.status(400).json({
+        success: false,
+        error: "Funding only available on testnet",
+      });
+    }
+
+    const response = await fetch(
+      `https://friendbot.stellar.org?addr=${wallet.publicKey}`
+    );
+
+    if (response.ok) {
+      return res.json({
+        success: true,
+        publicKey: wallet.publicKey,
+        message: "Wallet funded with 10,000 testnet XLM",
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Failed to fund wallet. It might already be funded.",
+      });
+    }
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fund wallet",
+    });
+  }
+});
+
+// Send XLM from wallet
+app.post("/api/wallet/:chatId/send", async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { destination, amount } = req.body;
+    const wallet = userWallets.get(chatId);
+
+    if (!wallet) {
+      return res.status(404).json({
+        success: false,
+        error: "No wallet found for this chat",
+      });
+    }
+
+    if (!destination || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: "destination and amount are required",
+      });
+    }
+
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid amount",
+      });
+    }
+
+    // Load sender account
+    const sourceKeypair = Keypair.fromSecret(wallet.secretKey);
+    const sourceAccount = await horizon.loadAccount(wallet.publicKey);
+
+    // Check if destination exists
+    let destinationExists = true;
+    try {
+      await horizon.loadAccount(destination);
+    } catch {
+      destinationExists = false;
+    }
+
+    const networkPassphrase = STELLAR_NETWORK === "testnet" 
+      ? Networks.TESTNET 
+      : Networks.PUBLIC;
+
+    let transaction;
+    if (destinationExists) {
+      transaction = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(
+          Operation.payment({
+            destination,
+            asset: Asset.native(),
+            amount: amountNum.toFixed(7),
+          })
+        )
+        .setTimeout(30)
+        .build();
+    } else {
+      if (amountNum < 1) {
+        return res.status(400).json({
+          success: false,
+          error: "Minimum 1 XLM required to create new account",
+        });
+      }
+      transaction = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(
+          Operation.createAccount({
+            destination,
+            startingBalance: amountNum.toFixed(7),
+          })
+        )
+        .setTimeout(30)
+        .build();
+    }
+
+    transaction.sign(sourceKeypair);
+    const result = await horizon.submitTransaction(transaction);
+
+    return res.json({
+      success: true,
+      hash: result.hash,
+      amount: amountNum,
+      destination,
+      explorerUrl: `https://stellar.expert/explorer/${STELLAR_NETWORK}/tx/${result.hash}`,
+    });
+  } catch (error: any) {
+    const errorMsg = error?.response?.data?.extras?.result_codes 
+      ? JSON.stringify(error.response.data.extras.result_codes)
+      : error.message || "Transaction failed";
+    return res.status(500).json({
+      success: false,
+      error: errorMsg,
+    });
+  }
 });
 
 app.get("/api/telegram/health", (_req, res) => {

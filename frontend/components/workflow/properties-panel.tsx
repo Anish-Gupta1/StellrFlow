@@ -6,10 +6,33 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Trash2, Copy, Settings, Info, ArrowRight } from 'lucide-react';
 import { useWorkflowStore } from '@/lib/stores/workflow-store';
 import { getIconByName } from '@/lib/utils/icons';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Config fields that should use dropdowns
+const DROPDOWN_CONFIGS: Record<string, { options: { value: string; label: string }[] }> = {
+  walletProvider: {
+    options: [
+      { value: 'freighter', label: 'Freighter (Browser Extension)' },
+      { value: 'telegram', label: 'Telegram Wallet (In-Bot)' },
+    ],
+  },
+  network: {
+    options: [
+      { value: 'testnet', label: 'Testnet' },
+      { value: 'mainnet', label: 'Mainnet' },
+    ],
+  },
+  operation: {
+    options: [
+      { value: 'chatbot', label: 'Chatbot (AI Assistant)' },
+      { value: 'balance', label: 'Check Balance' },
+    ],
+  },
+};
 
 export function PropertiesPanel() {
   const {
@@ -70,35 +93,62 @@ export function PropertiesPanel() {
                     />
                   </div>
 
-                  {selectedNode.data.config && Object.entries(selectedNode.data.config).map(([key, value]) => (
-                    <div className="space-y-2" key={key}>
-                      <Label htmlFor={`config-${key}`}>{key.charAt(0).toUpperCase() + key.slice(1)}</Label>
-                      <Input
-                        id={`config-${key}`}
-                        value={value as string}
-                        onChange={(e) => {
-                          console.log(`Updating ${key} to ${e.target.value}`);
-                          try {
+                  {selectedNode.data.config && Object.entries(selectedNode.data.config).map(([key, value]) => {
+                    const dropdownConfig = DROPDOWN_CONFIGS[key];
+                    const labelText = key
+                      .replace(/([A-Z])/g, ' $1')
+                      .replace(/^./, str => str.toUpperCase())
+                      .trim();
+
+                    // Use dropdown for specific config keys
+                    if (dropdownConfig) {
+                      return (
+                        <div className="space-y-2" key={key}>
+                          <Label htmlFor={`config-${key}`}>{labelText}</Label>
+                          <Select
+                            value={value as string}
+                            onValueChange={(newValue) => {
+                              const newConfig = { ...selectedNode.data.config };
+                              newConfig[key] = newValue;
+                              updateNodeData(selectedNode.id, { config: newConfig });
+                            }}
+                          >
+                            <SelectTrigger id={`config-${key}`}>
+                              <SelectValue placeholder={`Select ${labelText}`} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {dropdownConfig.options.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    }
+
+                    // Use text input for other config keys
+                    return (
+                      <div className="space-y-2" key={key}>
+                        <Label htmlFor={`config-${key}`}>{labelText}</Label>
+                        <Input
+                          id={`config-${key}`}
+                          value={value as string}
+                          onChange={(e) => {
                             const newConfig = { ...selectedNode.data.config };
                             newConfig[key] = e.target.value;
                             updateNodeData(selectedNode.id, { config: newConfig });
-                          } catch (error) {
-                            console.error('Error updating node config:', error);
-                          }
-                        }}
-                        onBlur={(e) => {
-                          console.log(`Finished editing ${key}, value: ${e.target.value}`);
-                          try {
+                          }}
+                          onBlur={(e) => {
                             const newConfig = { ...selectedNode.data.config };
                             newConfig[key] = e.target.value;
                             updateNodeData(selectedNode.id, { config: newConfig });
-                          } catch (error) {
-                            console.error('Error updating node config on blur:', error);
-                          }
-                        }}
-                      />
-                    </div>
-                  ))}
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
 
                   <Separator />
 

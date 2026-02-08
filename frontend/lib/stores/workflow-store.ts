@@ -121,11 +121,10 @@ export const NODE_TYPES = {
         type: "wallet-integration",
         label: "Wallet Integration",
         icon: "wallet",
-        description: "When linked to Telegram: bot acts as Stellar wallet for signing",
+        description: "Connect to Freighter browser wallet or create a Telegram-native wallet",
         config: {
-          walletType: "telegram",
+          walletProvider: "freighter",
           network: "testnet",
-          chatId: "",
         },
       },
       {
