@@ -427,7 +427,7 @@ export const nodeExecutors = {
       };
     } else {
       // Freighter Wallet - generate connection URL
-      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}&network=${network}`;
+      const walletUrl = `http://localhost:3003/connect-wallet?chatId=${chatId}`;
 
       // Send message to user with Freighter connection link (HTML format for clickable links)
       const message =
@@ -491,6 +491,81 @@ export const nodeExecutors = {
       xlmBalance: result.xlmBalance,
       otherBalances: result.otherBalances,
       network: result.network,
+    };
+  },
+
+  // AutoPay: Set up recurring XLM payments
+  executeAutopay: async (config: any, inputData?: any) => {
+    const chatId = inputData?.chatId || config.chatId;
+    const destination = config.destinationAddress || inputData?.destination || inputData?.address;
+    const amount = config.amount || inputData?.amount;
+    const interval = config.interval || "3600s";
+    const totalDuration = config.totalDuration;
+
+    if (!chatId) throw new Error("Chat ID required. Connect this block to a Telegram trigger first.");
+    if (!destination) throw new Error("Destination address required");
+    if (!amount) throw new Error("Payment amount required");
+
+    const response = await fetch(`${STELLAR_BOT_URL}/api/autopay/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chatId,
+        destination,
+        amount,
+        interval,
+        totalDuration,
+      }),
+    });
+
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || "Failed to start AutoPay");
+
+    return {
+      success: true,
+      chatId,
+      autopayId: result.autopayId,
+      destination,
+      amount,
+      interval: result.interval,
+      message: `AutoPay scheduled: ${amount} XLM every ${result.interval}`,
+    };
+  },
+
+  // Multisig: Require multiple signers to approve a transaction
+  executeMultisig: async (config: any, inputData?: any) => {
+    const chatId = inputData?.chatId || config.chatId;
+    const signerAddresses = config.signerAddresses?.split(',').map((s: string) => s.trim()) || [];
+    const approvalTimeout = config.approvalTimeout || "300s";
+    const autoExecute = config.autoExecute === 'true' || config.autoExecute === true;
+
+    if (!chatId) throw new Error("Chat ID required. Connect this block to a Telegram trigger first.");
+    if (signerAddresses.length === 0) throw new Error("At least one signer address required");
+
+    // For now, we'll use a simple approach: return configuration for transaction building
+    // The actual unsigned XDR would come from a previous block
+    const response = await fetch(`${STELLAR_BOT_URL}/api/multisig/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chatId,
+        signers: signerAddresses,
+        approvalTimeout,
+        autoExecute,
+      }),
+    });
+
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || "Failed to create multisig");
+
+    return {
+      success: true,
+      chatId,
+      transactionId: result.transactionId,
+      signers: signerAddresses,
+      approvalTimeout,
+      autoExecute,
+      message: `Multisig transaction created with ${signerAddresses.length} required signers`,
     };
   },
 };
