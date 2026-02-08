@@ -12,9 +12,28 @@ import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { Horizon, Networks, Keypair, TransactionBuilder, Operation, Asset, BASE_FEE } from "@stellar/stellar-sdk";
 
-dotenv.config();
+// Anchor module — on/off ramp + Stellar helpers
+import {
+  quickDeposit,
+  quickWithdrawal,
+  getDepositEstimate,
+  getWithdrawalEstimate,
+  getDeposit,
+  getWithdrawal,
+  getUserDeposits,
+  getUserWithdrawals,
+  getExchangeRate,
+  getSupportedCurrencies,
+  getLogForAddress,
+} from "./anchor/index.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 // Configuration
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -115,6 +134,7 @@ function initBot() {
       "/register - Get your chat ID\n" +
       "/status - Check your wallet status\n" +
       "/balance <address> - Check any Stellar address\n" +
+      "/rates - View exchange rates\n" +
       "/help - Show this message\n";
 
     if (hasAnyWallet) {
@@ -131,6 +151,14 @@ function initBot() {
       if (hasTelegramWallet && !hasFreighterWallet) {
         helpText += "/fundwallet - Get testnet XLM\n";
       }
+      
+      helpText += `\n**💰 On/Off Ramp (Anchor):**\n` +
+        "/addfunds <amount> [currency] - Deposit fiat → XLM\n" +
+        "/withdraw <xlm> [currency] - Withdraw XLM → fiat\n" +
+        "/rates - View demo exchange rates\n" +
+        "/txhistory - Your deposit/withdrawal history\n" +
+        "/depositstatus <id> - Check deposit status\n" +
+        "/withdrawstatus <id> - Check withdrawal status\n";
       
       helpText += `\n_Connected: ${wallet.publicKey.slice(0, 8)}...${wallet.publicKey.slice(-8)}_\n`;
     } else {
@@ -404,6 +432,354 @@ function initBot() {
         { parse_mode: "Markdown" }
       );
     }
+  });
+
+  // === ANCHOR ON/OFF RAMP COMMANDS ===
+  // Deposit fiat → XLM (On-Ramp)
+
+  // /addfunds [amount] [currency] - Create deposit request
+  bot.onText(/\/addfunds(?:\s+(\d+(?:\.\d+)?)\s*(\w+)?)?/, async (msg, match) => {
+    const chatId = msg.chat.id.toString();
+    const userId = msg.from?.id?.toString() || chatId;
+    const telegramWallet = userWallets.get(chatId);
+    const freighterWallet = freighterWallets.get(chatId);
+    
+    const wallet = freighterWallet || telegramWallet;
+    
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ No wallet connected.\n\n" +
+          "Connect a wallet first via StellrFlow workflow, then use /addfunds.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const amountStr = match?.[1];
+    const currency = match?.[2]?.toUpperCase() || 'USD';
+
+    if (!amountStr) {
+      // Show rate info and usage
+      const usdRate = getExchangeRate('USD');
+      const inrRate = getExchangeRate('INR');
+      
+      bot.sendMessage(
+        chatId,
+        "💰 **Add Funds (Deposit)**\n\n" +
+          "Convert fiat to XLM and credit your wallet.\n\n" +
+          "**Usage:** `/addfunds <amount> [currency]`\n\n" +
+          "**Examples:**\n" +
+          "• `/addfunds 100` - Deposit $100\n" +
+          "• `/addfunds 100 USD` - Deposit $100\n" +
+          "• `/addfunds 1000 INR` - Deposit ₹1000\n\n" +
+          "**Current Rates (Demo):**\n" +
+          `• 1 USD = ${usdRate.rate} XLM\n` +
+          `• 1 INR = ${inrRate.rate} XLM\n\n` +
+          "_Supported: USD, EUR, INR_",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      bot.sendMessage(chatId, "❌ Invalid amount. Please enter a positive number.");
+      return;
+    }
+
+    try {
+      // Get estimate first
+      const estimate = getDepositEstimate(amount, currency);
+      
+      bot.sendMessage(
+        chatId,
+        `⏳ **Processing Deposit...**\n\n` +
+          `**Amount:** ${amount} ${currency}\n` +
+          `**Est. XLM:** ~${estimate.estimatedXLM.toFixed(4)} XLM\n` +
+          `**Rate:** 1 ${currency} = ${estimate.rate} XLM`,
+        { parse_mode: "Markdown" }
+      );
+
+      // Create and auto-confirm deposit (hackathon demo mode)
+      const result = await quickDeposit(userId, amount, currency, wallet.publicKey);
+
+      if (result.success) {
+        bot.sendMessage(
+          chatId,
+          `✅ **Deposit Successful!**\n\n` +
+            `**Deposited:** ${amount} ${currency}\n` +
+            `**Credited:** ${result.creditedXLM.toFixed(4)} XLM\n` +
+            `**Deposit ID:** \`${result.depositId}\`\n` +
+            (result.stellarTxHash ? `**Tx:** \`${result.stellarTxHash.slice(0, 12)}...\`\n` : '') +
+            `\nUse /mybalance to check your updated balance.`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ **Deposit Failed**\n\n${result.message}\n\n` +
+            `_For testnet, try /fundwallet instead._`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } catch (err: any) {
+      bot.sendMessage(
+        chatId,
+        `❌ Error: ${err.message || "Deposit failed"}`,
+        { parse_mode: "Markdown" }
+      );
+    }
+  });
+
+  // /withdraw [amount] [currency] - Create withdrawal request
+  bot.onText(/\/withdraw(?:\s+(\d+(?:\.\d+)?)\s*(\w+)?)?/, async (msg, match) => {
+    const chatId = msg.chat.id.toString();
+    const userId = msg.from?.id?.toString() || chatId;
+    const telegramWallet = userWallets.get(chatId);
+    const freighterWallet = freighterWallets.get(chatId);
+    
+    const wallet = freighterWallet || telegramWallet;
+    const walletType = freighterWallet ? "🦊 Freighter" : "📱 Telegram";
+    
+    if (!wallet) {
+      bot.sendMessage(
+        chatId,
+        "❌ No wallet connected.\n\n" +
+          "Connect a wallet first via StellrFlow workflow, then use /withdraw.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const amountStr = match?.[1];
+    const currency = match?.[2]?.toUpperCase() || 'USD';
+
+    if (!amountStr) {
+      // Show rate info and usage
+      const estimate = getWithdrawalEstimate(10, 'USD');
+      
+      bot.sendMessage(
+        chatId,
+        "💸 **Withdraw Funds (Off-Ramp)**\n\n" +
+          "Convert XLM to fiat and withdraw.\n\n" +
+          "**Usage:** `/withdraw <xlm_amount> [currency]`\n\n" +
+          "**Examples:**\n" +
+          "• `/withdraw 10` - Withdraw 10 XLM to USD\n" +
+          "• `/withdraw 50 EUR` - Withdraw 50 XLM to EUR\n" +
+          "• `/withdraw 100 INR` - Withdraw 100 XLM to INR\n\n" +
+          "**Current Rate (Demo):**\n" +
+          `• 10 XLM = ~$${estimate.estimatedFiat} USD\n\n` +
+          "_Supported: USD, EUR, INR_",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    const xlmAmount = parseFloat(amountStr);
+    if (isNaN(xlmAmount) || xlmAmount <= 0) {
+      bot.sendMessage(chatId, "❌ Invalid amount. Please enter a positive number.");
+      return;
+    }
+
+    try {
+      // Check balance first
+      const account = await horizon.loadAccount(wallet.publicKey);
+      const xlmBalance = account.balances.find((b: any) => b.asset_type === "native");
+      const balance = xlmBalance && "balance" in xlmBalance ? parseFloat(xlmBalance.balance) : 0;
+
+      if (balance < xlmAmount) {
+        bot.sendMessage(
+          chatId,
+          `❌ **Insufficient Balance**\n\n` +
+            `**Requested:** ${xlmAmount} XLM\n` +
+            `**Available:** ${balance.toFixed(4)} XLM\n\n` +
+            `Use /addfunds to deposit more.`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      // Get estimate
+      const estimate = getWithdrawalEstimate(xlmAmount, currency);
+
+      bot.sendMessage(
+        chatId,
+        `⏳ **Processing Withdrawal...**\n\n` +
+          `**XLM Amount:** ${xlmAmount} XLM\n` +
+          `**Est. Payout:** ~${estimate.estimatedFiat} ${currency}`,
+        { parse_mode: "Markdown" }
+      );
+
+      // Process withdrawal (hackathon demo mode - simulated)
+      const result = await quickWithdrawal(userId, xlmAmount, currency, wallet.publicKey);
+
+      if (result.success) {
+        bot.sendMessage(
+          chatId,
+          `✅ **Withdrawal Processed!**\n\n` +
+            `**Withdrawn:** ${result.xlmDebited} XLM\n` +
+            `**Payout:** ${result.fiatPayout} ${result.currency}\n` +
+            `**Withdrawal ID:** \`${result.withdrawalId}\`\n` +
+            `**ETA:** ${result.eta}\n` +
+            (result.stellarTxHash ? `**Tx:** \`${result.stellarTxHash.slice(0, 12)}...\`\n` : '') +
+            `\n_Demo: In production, funds would be sent to your bank._`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ **Withdrawal Failed**\n\n${result.message}`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        bot.sendMessage(
+          chatId,
+          `❌ Wallet not funded on Stellar network.\n\n` +
+            `Use /fundwallet first to activate your account.`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        bot.sendMessage(
+          chatId,
+          `❌ Error: ${err.message || "Withdrawal failed"}`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    }
+  });
+
+  // /rates - Show current exchange rates
+  bot.onText(/\/rates/, (msg) => {
+    const chatId = msg.chat.id.toString();
+    
+    const usdRate = getExchangeRate('USD');
+    const eurRate = getExchangeRate('EUR');
+    const inrRate = getExchangeRate('INR');
+
+    bot.sendMessage(
+      chatId,
+      `📊 **Current Exchange Rates (Demo)**\n\n` +
+        `**Deposit (Fiat → XLM):**\n` +
+        `• 1 USD = ${usdRate.rate} XLM\n` +
+        `• 1 EUR = ${eurRate.rate.toFixed(2)} XLM\n` +
+        `• 1 INR = ${inrRate.rate} XLM\n\n` +
+        `**Withdraw (XLM → Fiat):**\n` +
+        `• 1 XLM = $${(1/usdRate.rate).toFixed(2)} USD\n` +
+        `• 1 XLM = €${(1/eurRate.rate).toFixed(2)} EUR\n` +
+        `• 1 XLM = ₹${(1/inrRate.rate).toFixed(2)} INR\n\n` +
+        `_Rates are demo values for hackathon._`,
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  // /txhistory - Show anchor transaction history for this user
+  bot.onText(/\/txhistory/, (msg) => {
+    const chatId = msg.chat.id.toString();
+    const userId = msg.from?.id?.toString() || chatId;
+    const wallet = freighterWallets.get(chatId) || userWallets.get(chatId);
+
+    if (!wallet) {
+      bot.sendMessage(chatId, "❌ No wallet connected.", { parse_mode: "Markdown" });
+      return;
+    }
+
+    const deps = getUserDeposits(userId);
+    const wdrs = getUserWithdrawals(userId);
+
+    if (deps.length === 0 && wdrs.length === 0) {
+      bot.sendMessage(
+        chatId,
+        "📋 **Transaction History**\n\nNo anchor transactions yet.\n\nUse /addfunds or /withdraw to get started.",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+
+    let text = "📋 **Transaction History**\n\n";
+
+    if (deps.length > 0) {
+      text += "**Deposits (On-Ramp):**\n";
+      for (const d of deps.slice(-5)) {
+        const icon = d.status === 'completed' ? '✅' : d.status === 'failed' ? '❌' : '⏳';
+        text += `${icon} \`${d.depositId}\` — ${d.fiatAmount} ${d.currency} → ${d.creditedXLM || d.estimatedXLM} XLM (${d.status})\n`;
+      }
+      text += "\n";
+    }
+
+    if (wdrs.length > 0) {
+      text += "**Withdrawals (Off-Ramp):**\n";
+      for (const w of wdrs.slice(-5)) {
+        const icon = w.status === 'completed' ? '✅' : w.status === 'failed' ? '❌' : '⏳';
+        text += `${icon} \`${w.withdrawalId}\` — ${w.xlmAmount} XLM → ${w.actualFiatPayout || w.estimatedFiat} ${w.currency} (${w.status})\n`;
+      }
+    }
+
+    bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  });
+
+  // /depositstatus <id> - Check a specific deposit
+  bot.onText(/\/depositstatus(?:\s+(\S+))?/, (msg, match) => {
+    const chatId = msg.chat.id.toString();
+    const depositId = match?.[1]?.trim();
+
+    if (!depositId) {
+      bot.sendMessage(chatId, "**Usage:** `/depositstatus DEP-XXXXX`", { parse_mode: "Markdown" });
+      return;
+    }
+
+    const d = getDeposit(depositId);
+    if (!d) {
+      bot.sendMessage(chatId, `❌ Deposit \`${depositId}\` not found.`, { parse_mode: "Markdown" });
+      return;
+    }
+
+    const icon = d.status === 'completed' ? '✅' : d.status === 'failed' ? '❌' : '⏳';
+    bot.sendMessage(
+      chatId,
+      `${icon} **Deposit Details**\n\n` +
+        `**ID:** \`${d.depositId}\`\n` +
+        `**Status:** ${d.status}\n` +
+        `**Amount:** ${d.fiatAmount} ${d.currency}\n` +
+        `**XLM Credited:** ${d.creditedXLM || '—'}\n` +
+        `**Rate:** 1 ${d.currency} = ${d.exchangeRate} XLM\n` +
+        (d.stellarTxHash ? `**Stellar Tx:** \`${d.stellarTxHash.slice(0, 16)}...\`\n` : '') +
+        `**Created:** ${d.createdAt.toISOString()}`,
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  // /withdrawstatus <id> - Check a specific withdrawal
+  bot.onText(/\/withdrawstatus(?:\s+(\S+))?/, (msg, match) => {
+    const chatId = msg.chat.id.toString();
+    const wdrId = match?.[1]?.trim();
+
+    if (!wdrId) {
+      bot.sendMessage(chatId, "**Usage:** `/withdrawstatus WDR-XXXXX`", { parse_mode: "Markdown" });
+      return;
+    }
+
+    const w = getWithdrawal(wdrId);
+    if (!w) {
+      bot.sendMessage(chatId, `❌ Withdrawal \`${wdrId}\` not found.`, { parse_mode: "Markdown" });
+      return;
+    }
+
+    const icon = w.status === 'completed' ? '✅' : w.status === 'failed' ? '❌' : '⏳';
+    bot.sendMessage(
+      chatId,
+      `${icon} **Withdrawal Details**\n\n` +
+        `**ID:** \`${w.withdrawalId}\`\n` +
+        `**Status:** ${w.status}\n` +
+        `**XLM Debited:** ${w.xlmAmount}\n` +
+        `**Fiat Payout:** ${w.actualFiatPayout || w.estimatedFiat} ${w.currency}\n` +
+        `**ETA:** ${w.eta}\n` +
+        (w.stellarTxHash ? `**Stellar Tx:** \`${w.stellarTxHash.slice(0, 16)}...\`\n` : '') +
+        `**Created:** ${w.createdAt.toISOString()}`,
+      { parse_mode: "Markdown" }
+    );
   });
 
   // Send XLM from wallet
@@ -1391,6 +1767,65 @@ app.post("/api/transaction/submit", async (req, res) => {
       error: errorMsg,
     });
   }
+});
+
+// === ANCHOR API ENDPOINTS ===
+// These let the frontend workflow builder trigger on/off ramp flows via REST.
+
+// POST /api/anchor/deposit — Trigger deposit (on-ramp)
+app.post("/api/anchor/deposit", async (req, res) => {
+  try {
+    const { chatId, amount, currency } = req.body;
+    if (!chatId || !amount) {
+      return res.status(400).json({ success: false, error: "chatId and amount are required" });
+    }
+    const wallet = freighterWallets.get(String(chatId)) || userWallets.get(String(chatId));
+    if (!wallet) {
+      return res.status(404).json({ success: false, error: "No wallet connected for this chat" });
+    }
+    const result = await quickDeposit(String(chatId), parseFloat(amount), currency || 'USD', wallet.publicKey);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/anchor/withdraw — Trigger withdrawal (off-ramp)
+app.post("/api/anchor/withdraw", async (req, res) => {
+  try {
+    const { chatId, xlmAmount, currency } = req.body;
+    if (!chatId || !xlmAmount) {
+      return res.status(400).json({ success: false, error: "chatId and xlmAmount are required" });
+    }
+    const wallet = freighterWallets.get(String(chatId)) || userWallets.get(String(chatId));
+    if (!wallet) {
+      return res.status(404).json({ success: false, error: "No wallet connected for this chat" });
+    }
+    const telegramWallet = userWallets.get(String(chatId));
+    const secret = telegramWallet?.secretKey;
+    const result = await quickWithdrawal(String(chatId), parseFloat(xlmAmount), currency || 'USD', wallet.publicKey, secret);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/anchor/rates — Get current exchange rates
+app.get("/api/anchor/rates", (_req, res) => {
+  const currencies = getSupportedCurrencies();
+  const rates = currencies.map((c: string) => {
+    const { rate } = getExchangeRate(c);
+    return { currency: c, fiatToXLM: rate, xlmToFiat: Math.round((1 / rate) * 100) / 100 };
+  });
+  return res.json({ success: true, rates });
+});
+
+// GET /api/anchor/history/:chatId — Get deposit/withdrawal history
+app.get("/api/anchor/history/:chatId", (req, res) => {
+  const { chatId } = req.params;
+  const deposits = getUserDeposits(chatId);
+  const withdrawals = getUserWithdrawals(chatId);
+  return res.json({ success: true, deposits, withdrawals });
 });
 
 app.get("/api/telegram/health", (_req, res) => {
