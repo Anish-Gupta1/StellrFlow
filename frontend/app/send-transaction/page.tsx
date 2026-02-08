@@ -35,7 +35,7 @@ export default function SendTransactionPage() {
       try {
         await new Promise((r) => setTimeout(r, 500));
         const result = await isConnected();
-        
+
         if (result.isConnected) {
           setFreighterInstalled(true);
           try {
@@ -94,7 +94,7 @@ export default function SendTransactionPage() {
 
       // Step 2: Sign with Freighter
       const signResult = await signTransaction(buildResult.xdr, {
-        networkPassphrase: network === "testnet" 
+        networkPassphrase: network === "testnet"
           ? "Test SDF Network ; September 2015"
           : "Public Global Stellar Network ; September 2015",
       });
@@ -110,6 +110,7 @@ export default function SendTransactionPage() {
         body: JSON.stringify({
           signedXdr: signResult.signedTxXdr,
           chatId,
+          network,
         }),
       });
 
@@ -123,7 +124,7 @@ export default function SendTransactionPage() {
 
       // Notify Telegram
       if (chatId) {
-        const message = 
+        const message =
           `✅ **Transaction Successful!**\n\n` +
           `**Sent:** ${amount} XLM\n` +
           `**To:** \`${destination.slice(0, 8)}...${destination.slice(-8)}\`\n\n` +
@@ -145,9 +146,9 @@ export default function SendTransactionPage() {
         await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            chatId, 
-            message: `❌ Transaction failed: ${err.message || "Unknown error"}` 
+          body: JSON.stringify({
+            chatId,
+            message: `❌ Transaction failed: ${err.message || "Unknown error"}`,
           }),
         });
       }
@@ -193,7 +194,7 @@ export default function SendTransactionPage() {
                   </p>
                 </div>
               </div>
-              <Button 
+              <Button
                 onClick={() => window.open(`https://stellar.expert/explorer/${network}/tx/${txHash}`, "_blank")}
                 variant="outline"
                 className="w-full"
