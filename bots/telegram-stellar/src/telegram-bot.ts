@@ -8,7 +8,7 @@
  * @see https://developers.stellar.org/docs/build/smart-contracts/getting-started/setup
  */
 
-import TelegramBot from "node-telegram-bot-api";
+// Start the Express server
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -30,6 +30,11 @@ import {
   getSupportedCurrencies,
   getLogForAddress,
 } from "./anchor/index.js";
+import { answerStellarQuestion } from "./sdk-chatbot.js";
+import {
+  parseIntervalFormat,
+  formatIntervalForDisplay,
+} from "./interval-parser.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -182,6 +187,32 @@ function initBot() {
       `/help - Show commands`,
       { parse_mode: "Markdown" }
     );
+  });
+
+  // Handle regular messages for Stellar Chatbot
+  bot.on("message", async (msg) => {
+    const chatId = msg.chat.id.toString();
+    const text = msg.text;
+
+    // Check if session has 'chatbot' feature enabled
+    const session = activeSessions.get(chatId);
+    if (!session || !session.features.includes("chatbot")) {
+      return;
+    }
+
+    // Ignore commands
+    if (!text || text.startsWith("/")) {
+      return;
+    }
+
+    // Answer question using Stellar SDK knowledge base
+    await bot.sendChatAction(chatId, "typing");
+    const answer = await answerStellarQuestion(text);
+
+    await bot.sendMessage(chatId, answer, {
+      parse_mode: "Markdown",
+      reply_to_message_id: msg.message_id
+    });
   });
 
   bot.onText(/\/register/, (msg) => {
