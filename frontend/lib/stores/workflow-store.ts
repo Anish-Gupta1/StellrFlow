@@ -161,6 +161,29 @@ export const NODE_TYPES = {
           amount: "",
         },
       },
+      {
+        type: "autopay",
+        label: "AutoPay",
+        icon: "repeat",
+        description: "Set up recurring XLM payments at regular intervals from your Telegram wallet",
+        config: {
+          destinationAddress: "",
+          amount: "",
+          interval: "3600s",
+          totalDuration: "24h",
+        },
+      },
+      {
+        type: "multisig",
+        label: "Multisig Approval",
+        icon: "shield",
+        description: "Require multiple wallet signers to approve a transaction before execution",
+        config: {
+          signerAddresses: "",
+          approvalTimeout: "300s",
+          autoExecute: "false",
+        },
+      },
     ],
   },
 
@@ -505,6 +528,54 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           }
 
           result = sendResult;
+          break;
+        }
+
+        case "autopay": {
+          const autopayResult = await nodeExecutors.executeAutopay(
+            node.data.config,
+            { ...inputData, chatId: inputData?.chatId }
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: autopayResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          const payload = { ...autopayResult, ...inputData };
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, payload);
+          }
+
+          result = payload;
+          break;
+        }
+
+        case "multisig": {
+          const multisigResult = await nodeExecutors.executeMultisig(
+            node.data.config,
+            { ...inputData, chatId: inputData?.chatId }
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: multisigResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          const payload = { ...multisigResult, ...inputData };
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, payload);
+          }
+
+          result = payload;
           break;
         }
 

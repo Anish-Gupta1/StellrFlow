@@ -19,11 +19,57 @@ const STELLAR_BOT_URL = process.env.NEXT_PUBLIC_STELLAR_BOT_URL || "http://local
 export default function ConnectWalletPage() {
   const searchParams = useSearchParams();
   const chatId = searchParams.get("chatId");
-  
+
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [freighterInstalled, setFreighterInstalled] = useState<boolean | null>(null);
+
+  // Register wallet with backend and send confirmation to Telegram
+  const registerWalletWithBackend = async (key: string, network: string) => {
+    if (!chatId) return;
+
+    // Register the Freighter wallet with the backend
+    try {
+      const registerResponse = await fetch(`${STELLAR_BOT_URL}/api/freighter/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          publicKey: key,
+          network: network.toLowerCase(),
+        }),
+      });
+      const registerResult = await registerResponse.json();
+      console.log("Freighter registration result:", registerResult);
+    } catch (e) {
+      console.error("Failed to register Freighter wallet:", e);
+    }
+
+    // Send confirmation message to Telegram
+    const message =
+      `✅ *Freighter Wallet Connected!*\n\n` +
+      `🦊 *Address:*\n\`${key}\`\n\n` +
+      `🌐 *Network:* ${network}\n\n` +
+      `*Available Commands:*\n` +
+      `/mybalance - Check your wallet balance\n` +
+      `/mywallet - Show your full address\n` +
+      `/send <address> <amount> - Send XLM\n` +
+      `/disconnect - Disconnect this wallet\n` +
+      `/status - View your wallet status`;
+
+    try {
+      const sendResponse = await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, message, parseMode: "Markdown" }),
+      });
+      const sendResult = await sendResponse.json();
+      console.log("Telegram message result:", sendResult);
+    } catch (e) {
+      console.error("Failed to send Telegram message:", e);
+    }
+  };
 
   useEffect(() => {
     // Check if Freighter is installed
@@ -31,12 +77,12 @@ export default function ConnectWalletPage() {
       try {
         // Wait a bit for extension to inject
         await new Promise((r) => setTimeout(r, 500));
-        
+
         const result = await isConnected();
-        
+
         if (result.isConnected) {
           setFreighterInstalled(true);
-          
+
           // Check if already allowed
           const allowedResult = await isAllowed();
           if (allowedResult.isAllowed) {
@@ -45,6 +91,16 @@ export default function ConnectWalletPage() {
               if (addressResult.address) {
                 setPublicKey(addressResult.address);
                 setStatus("connected");
+
+                // Also register with backend (auto-detected wallet)
+                let network = "TESTNET";
+                try {
+                  const networkResult = await getNetwork();
+                  network = networkResult.network || "TESTNET";
+                } catch (e) {
+                  console.log("Could not get network:", e);
+                }
+                await registerWalletWithBackend(addressResult.address, network);
               }
             } catch (e) {
               console.log("Could not get address:", e);
@@ -75,11 +131,11 @@ export default function ConnectWalletPage() {
 
       // Request access (this prompts the user and returns address)
       const accessResult = await requestAccess();
-      
+
       if (accessResult.error) {
         throw new Error(accessResult.error.message || "Failed to get access");
       }
-      
+
       if (!accessResult.address) {
         throw new Error("No address returned. Please approve the connection in Freighter.");
       }
@@ -91,55 +147,12 @@ export default function ConnectWalletPage() {
       } catch (e) {
         console.log("Could not get network:", e);
       }
-      
+
       setPublicKey(accessResult.address);
       setStatus("connected");
 
-      // Register Freighter wallet with backend and notify user
-      if (chatId) {
-        const key = accessResult.address;
-        
-        // First, register the Freighter wallet with the backend
-        try {
-          const registerResponse = await fetch(`${STELLAR_BOT_URL}/api/freighter/connect`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              chatId, 
-              publicKey: key,
-              network: network.toLowerCase(),
-            }),
-          });
-          const registerResult = await registerResponse.json();
-          console.log("Freighter registration result:", registerResult);
-        } catch (e) {
-          console.error("Failed to register Freighter wallet:", e);
-        }
-
-        // Then send confirmation message to Telegram (using HTML for clickable elements)
-        const message = 
-          `✅ <b>Freighter Wallet Connected!</b>\n\n` +
-          `🦊 <b>Address:</b>\n<code>${key}</code>\n\n` +
-          `🌐 <b>Network:</b> ${network}\n\n` +
-          `<b>Available Commands:</b>\n` +
-          `/mybalance - Check your wallet balance\n` +
-          `/mywallet - Show your full address\n` +
-          `/send - Send XLM (opens signing page)\n` +
-          `/disconnect - Disconnect this wallet\n` +
-          `/status - View your wallet status`;
-
-        try {
-          const sendResponse = await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chatId, message, parseMode: "HTML" }),
-          });
-          const sendResult = await sendResponse.json();
-          console.log("Telegram message result:", sendResult);
-        } catch (e) {
-          console.error("Failed to send Telegram message:", e);
-        }
-      }
+      // Register with backend and notify Telegram
+      await registerWalletWithBackend(accessResult.address, network);
     } catch (err: any) {
       console.error("Wallet connection error:", err);
       setError(err.message || "Failed to connect wallet. Please try again.");
