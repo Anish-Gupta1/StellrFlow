@@ -532,7 +532,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
 
         case "autopay": {
-          const autopayResult = await nodeExecutors.executeAutopay(
+          const autopayResult = await nodeExecutors.executeAutoPay(
             node.data.config,
             { ...inputData, chatId: inputData?.chatId }
           );
