@@ -426,31 +426,6 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 
 ---
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Built for the **Stellar Buildathon**
-- Inspired by [fluid-labs/core](https://github.com/fluid-labs/core) AO workflow architecture
-- Powered by the amazing [Stellar](https://stellar.org/) and [Soroban](https://soroban.stellar.org/) ecosystem
-- UI components from [shadcn/ui](https://ui.shadcn.com/)
-- Workflow visualization by [ReactFlow](https://reactflowdev.com/)
-
----
-
-## 📞 Contact & Support
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/Anish-Gupta1/StellrFlow/issues)
-- **Email**: support@stellrflow.com
-- **Twitter**: [@StellrFlow](https://twitter.com/stellrflow)
-- **Discord**: [Join our community](https://discord.gg/stellrflow)
-
----
-
 <div align="center">
   <strong>Built with ❤️ for the Stellar community</strong>
   <br/>
