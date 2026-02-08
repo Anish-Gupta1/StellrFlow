@@ -10,11 +10,7 @@ let isBotActive = false;
 
 // Telegram API - uses Stellar bot backend
 export const telegramApi = {
-  sendMessage: async (
-    chatId: string,
-    message: string,
-    parseMode: string = "Markdown",
-  ) => {
+  sendMessage: async (chatId: string, message: string, parseMode: string = "Markdown") => {
     const response = await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -52,11 +48,7 @@ export const telegramApi = {
   },
 
   // Send message when Wallet Integration is connected (Freighter)
-  sendWalletSetupMessage: async (
-    chatId: string,
-    walletUrl: string,
-    network: string = "testnet",
-  ) => {
+  sendWalletSetupMessage: async (chatId: string, walletUrl: string, network: string = "testnet") => {
     const message =
       `👛 **Wallet Integration Enabled!**\n\n` +
       `Connect your Freighter wallet to interact with Stellar:\n\n` +
@@ -71,26 +63,21 @@ export const telegramApi = {
   },
 
   // Send message when Telegram Wallet is created
-  sendTelegramWalletMessage: async (
-    chatId: string,
-    publicKey: string,
-    isNew: boolean,
-    network: string = "testnet",
-  ) => {
+  sendTelegramWalletMessage: async (chatId: string, publicKey: string, isNew: boolean, network: string = "testnet") => {
     const message = isNew
       ? `🎉 **Your Stellar Wallet is Ready!**\n\n` +
-        `**Address:**\n\`${publicKey}\`\n\n` +
-        `📱 **Wallet Commands:**\n` +
-        `/mybalance - Check your balance\n` +
-        `/mywallet - Show your address\n` +
-        `/send <address> <amount> - Send XLM\n` +
-        `/fundwallet - Get free testnet XLM\n\n` +
-        `Network: ${network}\n\n` +
-        `_Your wallet is securely stored in the bot._`
+      `**Address:**\n\`${publicKey}\`\n\n` +
+      `📱 **Wallet Commands:**\n` +
+      `/mybalance - Check your balance\n` +
+      `/mywallet - Show your address\n` +
+      `/send <address> <amount> - Send XLM\n` +
+      `/fundwallet - Get free testnet XLM\n\n` +
+      `Network: ${network}\n\n` +
+      `_Your wallet is securely stored in the bot._`
       : `👛 **Wallet Already Created!**\n\n` +
-        `**Address:**\n\`${publicKey}\`\n\n` +
-        `Use /mybalance to check your balance.\n` +
-        `Network: ${network}`;
+      `**Address:**\n\`${publicKey}\`\n\n` +
+      `Use /mybalance to check your balance.\n` +
+      `Network: ${network}`;
     return telegramApi.sendMessage(chatId, message);
   },
 
@@ -135,14 +122,11 @@ export const stellarApi = {
   getBalance: async (address: string) => {
     try {
       const response = await fetch(
-        `${STELLAR_BOT_URL}/api/stellar/balance/${encodeURIComponent(address)}`,
+        `${STELLAR_BOT_URL}/api/stellar/balance/${encodeURIComponent(address)}`
       );
       const data = await response.json();
       if (!response.ok) {
-        return {
-          success: false,
-          error: data.error || "Failed to fetch balance",
-        };
+        return { success: false, error: data.error || "Failed to fetch balance" };
       }
       return {
         success: true,
@@ -165,9 +149,7 @@ export const stellarApi = {
         body: JSON.stringify({ chatId, message }),
       });
       const data = await response.json();
-      return data.success
-        ? { success: true }
-        : { success: false, error: data.error };
+      return data.success ? { success: true } : { success: false, error: data.error };
     } catch (error) {
       return {
         success: false,
@@ -206,9 +188,7 @@ export const telegramWalletApi = {
   // Get wallet info
   getWallet: async (chatId: string) => {
     try {
-      const response = await fetch(
-        `${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}`,
-      );
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}`);
       if (!response.ok) {
         const data = await response.json();
         return { success: false, error: data.error || "Wallet not found" };
@@ -222,9 +202,7 @@ export const telegramWalletApi = {
   // Get wallet balance (uses the wallet's own address)
   getBalance: async (chatId: string) => {
     try {
-      const response = await fetch(
-        `${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/balance`,
-      );
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/balance`);
       return response.json();
     } catch (error) {
       return { success: false, error: "Failed to get balance" };
@@ -234,12 +212,9 @@ export const telegramWalletApi = {
   // Fund wallet (testnet only)
   fundWallet: async (chatId: string) => {
     try {
-      const response = await fetch(
-        `${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/fund`,
-        {
-          method: "POST",
-        },
-      );
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/fund`, {
+        method: "POST",
+      });
       return response.json();
     } catch (error) {
       return { success: false, error: "Failed to fund wallet" };
@@ -249,14 +224,11 @@ export const telegramWalletApi = {
   // Send XLM from wallet
   sendXLM: async (chatId: string, destination: string, amount: string) => {
     try {
-      const response = await fetch(
-        `${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/send`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ destination, amount }),
-        },
-      );
+      const response = await fetch(`${STELLAR_BOT_URL}/api/wallet/${encodeURIComponent(chatId)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination, amount }),
+      });
       return response.json();
     } catch (error) {
       return { success: false, error: "Failed to send XLM" };
@@ -268,19 +240,14 @@ export const telegramWalletApi = {
 export const nodeExecutors = {
   // Execute Telegram trigger - registers session and sends initial connection message
   // Connected blocks will send their own detailed messages
-  executeTelegramConnect: async (
-    config: any,
-    connectedNodeTypes: string[] = [],
-  ) => {
+  executeTelegramConnect: async (config: any, connectedNodeTypes: string[] = []) => {
     const chatId = config.chatId?.trim();
     if (!chatId) {
-      throw new Error(
-        "Telegram Chat ID is required. Send /register to the bot to get yours.",
-      );
+      throw new Error("Telegram Chat ID is required. Send /register to the bot to get yours.");
     }
     if (chatId.startsWith("@")) {
       throw new Error(
-        "Use your numeric Chat ID, not username. Open the bot in Telegram and send /register to get your Chat ID.",
+        "Use your numeric Chat ID, not username. Open the bot in Telegram and send /register to get your Chat ID."
       );
     }
 
@@ -313,24 +280,17 @@ export const nodeExecutors = {
       const message =
         `🚀 **StellrFlow Connected!**\n\n` +
         `Your workflow is now active with:\n` +
-        enabledFeatures.map((f) => `✅ ${f}`).join("\n") +
+        enabledFeatures.map(f => `✅ ${f}`).join('\n') +
         `\n\n_Setting up features..._`;
 
       result = await telegramApi.sendMessage(chatId, message);
     }
 
     if (!result.success) {
-      throw new Error(
-        result.error || "Failed to send message. Is the bot running?",
-      );
+      throw new Error(result.error || "Failed to send message. Is the bot running?");
     }
 
-    return {
-      success: true,
-      chatId,
-      features,
-      message: "Connected successfully",
-    };
+    return { success: true, chatId, features, message: "Connected successfully" };
   },
 
   executeTelegramSend: async (config: any, inputData?: any) => {
@@ -348,10 +308,7 @@ export const nodeExecutors = {
       message = message.replace(/\{address\}/g, String(inputData.address));
     }
 
-    const result = await stellarApi.sendTelegram(
-      chatId,
-      message || "Notification from StellrFlow",
-    );
+    const result = await stellarApi.sendTelegram(chatId, message || "Notification from StellrFlow");
 
     if (!result.success) {
       throw new Error(result.error || "Failed to send message");
@@ -365,9 +322,7 @@ export const nodeExecutors = {
     const chatId = inputData?.chatId;
 
     if (!chatId) {
-      throw new Error(
-        "Chat ID required. Connect this block to a Telegram trigger first.",
-      );
+      throw new Error("Chat ID required. Connect this block to a Telegram trigger first.");
     }
 
     if (operation === "chatbot") {
@@ -391,8 +346,7 @@ export const nodeExecutors = {
         success: true,
         operation: "chatbot",
         chatId,
-        message:
-          "Stellar AI Chatbot is now active. User can ask questions in Telegram.",
+        message: "Stellar AI Chatbot is now active. User can ask questions in Telegram.",
       };
     }
 
@@ -440,26 +394,24 @@ export const nodeExecutors = {
       const createResult = await telegramWalletApi.createWallet(chatId);
 
       if (!createResult.success) {
-        throw new Error(
-          createResult.error || "Failed to create Telegram wallet",
-        );
+        throw new Error(createResult.error || "Failed to create Telegram wallet");
       }
 
       // Send message to user with wallet info
       const message = createResult.isNew
         ? `🎉 **Your Stellar Wallet is Ready!**\n\n` +
-          `**Address:**\n\`${createResult.publicKey}\`\n\n` +
-          `📱 **Wallet Commands:**\n` +
-          `/mybalance - Check your balance\n` +
-          `/mywallet - Show your address\n` +
-          `/send <address> <amount> - Send XLM\n` +
-          `/fundwallet - Get free testnet XLM\n` +
-          `/disconnect - Disconnect wallet\n\n` +
-          `Network: ${network}\n\n` +
-          `_Your wallet is securely stored in the bot._`
+        `**Address:**\n\`${createResult.publicKey}\`\n\n` +
+        `📱 **Wallet Commands:**\n` +
+        `/mybalance - Check your balance\n` +
+        `/mywallet - Show your address\n` +
+        `/send <address> <amount> - Send XLM\n` +
+        `/fundwallet - Get free testnet XLM\n` +
+        `/disconnect - Disconnect wallet\n\n` +
+        `Network: ${network}\n\n` +
+        `_Your wallet is securely stored in the bot._`
         : `👛 **Wallet Already Created!**\n\n` +
-          `**Address:**\n\`${createResult.publicKey}\`\n\n` +
-          `Use /mybalance to check your balance.`;
+        `**Address:**\n\`${createResult.publicKey}\`\n\n` +
+        `Use /mybalance to check your balance.`;
 
       await telegramApi.sendMessage(chatId, message);
 
@@ -471,31 +423,29 @@ export const nodeExecutors = {
         isNew: createResult.isNew,
         chatId,
         network,
-        message: createResult.isNew
-          ? "Telegram wallet created"
-          : "Telegram wallet already exists",
+        message: createResult.isNew ? "Telegram wallet created" : "Telegram wallet already exists",
       };
     } else {
       // Freighter Wallet - generate connection URL
-      const walletUrl = `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}/connect-wallet?chatId=${chatId}&network=${network}`;
+      const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}&network=${network}`;
 
-      // Send the connect link directly in the message text
-      // (Telegram inline buttons don't work with localhost URLs)
+      // Send message to user with Freighter connection link (HTML format for clickable links)
       const message =
-        `🦊 *Freighter Wallet Integration*\n\n` +
-        `Connect your Freighter browser extension wallet to Stellar.\n\n` +
-        `👉 Open this link in your browser:\n` +
-        `[${walletUrl}](${walletUrl})\n\n` +
-        `*After connecting you can:*\n` +
-        `• Check balance with /mybalance\n` +
-        `• Send XLM with /send\n` +
-        `• View address with /mywallet\n\n` +
-        `*Requirements:*\n` +
+        `🦊 <b>Freighter Wallet Integration</b>\n\n` +
+        `Connect your Freighter browser extension wallet to Stellar:\n\n` +
+        `👉 <a href="${walletUrl}">Click here to connect</a>\n\n` +
+        `<b>After connecting you can:</b>\n` +
+        `• View your wallet balances\n` +
+        `• Sign and approve transactions\n` +
+        `• Interact with Stellar dApps\n\n` +
+        `<b>Requirements:</b>\n` +
         `• Freighter extension installed\n` +
-        `• Open link in a desktop browser\n\n` +
-        `Network: ${network}`;
+        `• Open link in browser with Freighter\n\n` +
+        `Network: ${network}\n\n` +
+        `🔗 Get Freighter: <a href="https://freighter.app">freighter.app</a>`;
 
-      await telegramApi.sendMessage(chatId, message, "Markdown");
+      await telegramApi.sendMessage(chatId, message, "HTML");
+
       return {
         success: true,
         mode: "freighter-wallet",
@@ -512,9 +462,7 @@ export const nodeExecutors = {
   executeWalletBalance: async (config: any, inputData?: any) => {
     const chatId = inputData?.chatId || config.chatId;
     if (!chatId) {
-      throw new Error(
-        "Chat ID is required. Connect to a Telegram trigger first.",
-      );
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
     }
 
     // Get balance of user's own Telegram wallet
@@ -529,7 +477,7 @@ export const nodeExecutors = {
       `💰 **Your Wallet Balance**\n\n` +
       `**XLM:** ${result.xlmBalance}\n` +
       (result.otherBalances?.length > 0
-        ? `\n**Other Assets:**\n${result.otherBalances.map((b: any) => `• ${b.balance} ${b.asset}`).join("\n")}\n`
+        ? `\n**Other Assets:**\n${result.otherBalances.map((b: any) => `• ${b.balance} ${b.asset}`).join('\n')}\n`
         : "") +
       `\nAddress: \`${result.publicKey?.slice(0, 8)}...${result.publicKey?.slice(-8)}\`\n` +
       `Network: ${result.network}`;
@@ -546,90 +494,213 @@ export const nodeExecutors = {
     };
   },
 
-  // AutoPay: Set up recurring XLM payments
-  executeAutopay: async (config: any, inputData?: any) => {
+  // Execute Anchor On-Ramp (Fiat → XLM)
+  executeAnchorOnRamp: async (config: any, inputData?: any) => {
     const chatId = inputData?.chatId || config.chatId;
-    const destination =
-      config.destinationAddress || inputData?.destination || inputData?.address;
-    const amount = config.amount || inputData?.amount;
-    const interval = config.interval || "3600s";
-    const totalDuration = config.totalDuration;
+    if (!chatId) {
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
+    }
 
-    if (!chatId)
-      throw new Error(
-        "Chat ID required. Connect this block to a Telegram trigger first.",
-      );
-    if (!destination) throw new Error("Destination address required");
-    if (!amount) throw new Error("Payment amount required");
+    const amount = parseFloat(config.amount) || 100;
+    const currency = config.fiatCurrency || "USD";
 
-    const response = await fetch(`${STELLAR_BOT_URL}/api/autopay/start`, {
+    // Call backend anchor deposit endpoint
+    const response = await fetch(`${STELLAR_BOT_URL}/api/anchor/deposit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chatId,
-        destination,
-        amount,
-        interval,
-        totalDuration,
-      }),
+      body: JSON.stringify({ chatId, amount, currency }),
     });
 
     const result = await response.json();
-    if (!result.success)
-      throw new Error(result.error || "Failed to start AutoPay");
+
+    if (!result.success) {
+      // Notify user of failure
+      await telegramApi.sendMessage(
+        chatId,
+        `❌ **Deposit Failed**\n\n${result.error || "Unable to process deposit."}`
+      );
+      throw new Error(result.error || "Anchor deposit failed");
+    }
+
+    // Notify user of success
+    const message =
+      `✅ **Deposit Successful!**\n\n` +
+      `**Deposited:** ${amount} ${currency}\n` +
+      `**Credited:** ${result.creditedXLM?.toFixed(4) || "—"} XLM\n` +
+      `**Deposit ID:** \`${result.depositId}\`\n\n` +
+      `Use /mybalance to check your updated balance.`;
+
+    await telegramApi.sendMessage(chatId, message);
 
     return {
       success: true,
       chatId,
-      autopayId: result.autopayId,
-      destination,
-      amount,
-      interval: result.interval,
-      message: `AutoPay scheduled: ${amount} XLM every ${result.interval}`,
+      depositId: result.depositId,
+      fiatAmount: amount,
+      currency,
+      creditedXLM: result.creditedXLM,
     };
   },
 
-  // Multisig: Require multiple signers to approve a transaction
-  executeMultisig: async (config: any, inputData?: any) => {
+  // Execute Anchor Off-Ramp (XLM → Fiat)
+  executeAnchorOffRamp: async (config: any, inputData?: any) => {
     const chatId = inputData?.chatId || config.chatId;
-    const signerAddresses =
-      config.signerAddresses?.split(",").map((s: string) => s.trim()) || [];
-    const approvalTimeout = config.approvalTimeout || "300s";
-    const autoExecute =
-      config.autoExecute === "true" || config.autoExecute === true;
+    if (!chatId) {
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
+    }
 
-    if (!chatId)
-      throw new Error(
-        "Chat ID required. Connect this block to a Telegram trigger first.",
-      );
-    if (signerAddresses.length === 0)
-      throw new Error("At least one signer address required");
+    const xlmAmount = parseFloat(config.amount) || 10;
+    const currency = config.fiatCurrency || "USD";
 
-    // For now, we'll use a simple approach: return configuration for transaction building
-    // The actual unsigned XDR would come from a previous block
-    const response = await fetch(`${STELLAR_BOT_URL}/api/multisig/create`, {
+    // Call backend anchor withdrawal endpoint
+    const response = await fetch(`${STELLAR_BOT_URL}/api/anchor/withdraw`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chatId,
-        signers: signerAddresses,
-        approvalTimeout,
-        autoExecute,
-      }),
+      body: JSON.stringify({ chatId, xlmAmount, currency }),
     });
 
     const result = await response.json();
-    if (!result.success)
-      throw new Error(result.error || "Failed to create multisig");
+
+    if (!result.success) {
+      await telegramApi.sendMessage(
+        chatId,
+        `❌ **Withdrawal Failed**\n\n${result.error || "Unable to process withdrawal."}`
+      );
+      throw new Error(result.error || "Anchor withdrawal failed");
+    }
+
+    // Notify user of success
+    const message =
+      `✅ **Withdrawal Processed!**\n\n` +
+      `**Withdrawn:** ${xlmAmount} XLM\n` +
+      `**Payout:** ${result.fiatPayout?.toFixed(2) || "—"} ${currency}\n` +
+      `**Withdrawal ID:** \`${result.withdrawalId}\`\n` +
+      `**ETA:** ${result.eta || "5-10 min"}\n\n` +
+      `_Demo: In production, funds would be sent to your bank._`;
+
+    await telegramApi.sendMessage(chatId, message);
 
     return {
       success: true,
       chatId,
-      transactionId: result.transactionId,
-      signers: signerAddresses,
-      approvalTimeout,
-      autoExecute,
-      message: `Multisig transaction created with ${signerAddresses.length} required signers`,
+      withdrawalId: result.withdrawalId,
+      xlmAmount,
+      fiatPayout: result.fiatPayout,
+      currency,
+      eta: result.eta,
+    };
+  },
+
+  // Execute AutoPay Setup (Recurring Payments)
+  executeAutoPay: async (config: any, inputData?: any) => {
+    const chatId = inputData?.chatId || config.chatId;
+    if (!chatId) {
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
+    }
+
+    const destination = config.destination?.trim();
+    const amount = parseFloat(config.amount) || 10;
+    const interval = config.interval || "daily";
+    const duration = parseInt(config.duration) || 30;
+
+    if (!destination) {
+      throw new Error("Destination address is required for AutoPay");
+    }
+
+    // Call backend to set up scheduled payment
+    const response = await fetch(`${STELLAR_BOT_URL}/api/autopay/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, destination, amount, interval, duration }),
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      await telegramApi.sendMessage(
+        chatId,
+        `❌ **AutoPay Setup Failed**\n\n${result.error || "Unable to create scheduled payment."}`
+      );
+      throw new Error(result.error || "AutoPay setup failed");
+    }
+
+    // Notify user
+    const intervalText = interval === "daily" ? "every day" :
+      interval === "weekly" ? "every week" :
+        interval === "monthly" ? "every month" : interval;
+
+    const message =
+      `✅ **AutoPay Activated!**\n\n` +
+      `**Amount:** ${amount} XLM\n` +
+      `**To:** \`${destination.slice(0, 8)}...${destination.slice(-8)}\`\n` +
+      `**Frequency:** ${intervalText}\n` +
+      `**Duration:** ${duration} days\n` +
+      `**Schedule ID:** \`${result.scheduleId}\`\n\n` +
+      `Use /autopay to manage your schedules.`;
+
+    await telegramApi.sendMessage(chatId, message);
+
+    return {
+      success: true,
+      chatId,
+      scheduleId: result.scheduleId,
+      destination,
+      amount,
+      interval,
+      duration,
+      nextPayment: result.nextPayment,
+    };
+  },
+
+  // Execute Multisig Setup (Multi-approval)
+  executeMultisig: async (config: any, inputData?: any) => {
+    const chatId = inputData?.chatId || config.chatId;
+    if (!chatId) {
+      throw new Error("Chat ID is required. Connect to a Telegram trigger first.");
+    }
+
+    const threshold = parseInt(config.threshold) || 2;
+    const signers = config.signers || [];
+    const timeout = parseInt(config.timeout) || 24;
+
+    if (signers.length < threshold) {
+      throw new Error(`Need at least ${threshold} signers configured`);
+    }
+
+    // Call backend to set up multisig requirement
+    const response = await fetch(`${STELLAR_BOT_URL}/api/multisig/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, threshold, signers, timeout }),
+    });
+
+    const result = await response.json();
+
+    if (!result.success) {
+      await telegramApi.sendMessage(
+        chatId,
+        `❌ **Multisig Setup Failed**\n\n${result.error || "Unable to configure multisig."}`
+      );
+      throw new Error(result.error || "Multisig setup failed");
+    }
+
+    // Notify user
+    const message =
+      `✅ **Multisig Configured!**\n\n` +
+      `**Threshold:** ${threshold} of ${signers.length} signatures required\n` +
+      `**Approval Timeout:** ${timeout} hours\n` +
+      `**Multisig ID:** \`${result.multisigId}\`\n\n` +
+      `Transactions will require ${threshold} approvals before execution.`;
+
+    await telegramApi.sendMessage(chatId, message);
+
+    return {
+      success: true,
+      chatId,
+      multisigId: result.multisigId,
+      threshold,
+      signerCount: signers.length,
+      timeout,
     };
   },
 };
