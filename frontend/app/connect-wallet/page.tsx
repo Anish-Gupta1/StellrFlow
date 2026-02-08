@@ -95,23 +95,50 @@ export default function ConnectWalletPage() {
       setPublicKey(accessResult.address);
       setStatus("connected");
 
-      // Notify the Telegram bot about the wallet connection
+      // Register Freighter wallet with backend and notify user
       if (chatId) {
         const key = accessResult.address;
-        const message = 
-          `✅ **Wallet Connected!**\n\n` +
-          `🔑 Address: \`${key.slice(0, 8)}...${key.slice(-8)}\`\n` +
-          `🌐 Network: ${network}\n\n` +
-          `You can now:\n` +
-          `• Check your balance: /balance ${key}\n` +
-          `• Sign transactions when prompted\n\n` +
-          `_Powered by Freighter & Stellar_`;
+        
+        // First, register the Freighter wallet with the backend
+        try {
+          const registerResponse = await fetch(`${STELLAR_BOT_URL}/api/freighter/connect`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              chatId, 
+              publicKey: key,
+              network: network.toLowerCase(),
+            }),
+          });
+          const registerResult = await registerResponse.json();
+          console.log("Freighter registration result:", registerResult);
+        } catch (e) {
+          console.error("Failed to register Freighter wallet:", e);
+        }
 
-        await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId, message }),
-        });
+        // Then send confirmation message to Telegram (using HTML for clickable elements)
+        const message = 
+          `✅ <b>Freighter Wallet Connected!</b>\n\n` +
+          `🦊 <b>Address:</b>\n<code>${key}</code>\n\n` +
+          `🌐 <b>Network:</b> ${network}\n\n` +
+          `<b>Available Commands:</b>\n` +
+          `/mybalance - Check your wallet balance\n` +
+          `/mywallet - Show your full address\n` +
+          `/send - Send XLM (opens signing page)\n` +
+          `/disconnect - Disconnect this wallet\n` +
+          `/status - View your wallet status`;
+
+        try {
+          const sendResponse = await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chatId, message, parseMode: "HTML" }),
+          });
+          const sendResult = await sendResponse.json();
+          console.log("Telegram message result:", sendResult);
+        } catch (e) {
+          console.error("Failed to send Telegram message:", e);
+        }
       }
     } catch (err: any) {
       console.error("Wallet connection error:", err);

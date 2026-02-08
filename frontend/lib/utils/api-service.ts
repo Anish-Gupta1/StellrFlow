@@ -10,11 +10,11 @@ let isBotActive = false;
 
 // Telegram API - uses Stellar bot backend
 export const telegramApi = {
-  sendMessage: async (chatId: string, message: string) => {
+  sendMessage: async (chatId: string, message: string, parseMode: string = "Markdown") => {
     const response = await fetch(`${STELLAR_BOT_URL}/api/telegram/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId, message }),
+      body: JSON.stringify({ chatId, message, parseMode }),
     });
     return response.json();
   },
@@ -405,7 +405,8 @@ export const nodeExecutors = {
           `/mybalance - Check your balance\n` +
           `/mywallet - Show your address\n` +
           `/send <address> <amount> - Send XLM\n` +
-          `/fundwallet - Get free testnet XLM\n\n` +
+          `/fundwallet - Get free testnet XLM\n` +
+          `/disconnect - Disconnect wallet\n\n` +
           `Network: ${network}\n\n` +
           `_Your wallet is securely stored in the bot._`
         : `👛 **Wallet Already Created!**\n\n` +
@@ -428,22 +429,22 @@ export const nodeExecutors = {
       // Freighter Wallet - generate connection URL
       const walletUrl = `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}/connect-wallet?chatId=${chatId}&network=${network}`;
 
-      // Send message to user with Freighter connection link
+      // Send message to user with Freighter connection link (HTML format for clickable links)
       const message =
-        `🦊 **Freighter Wallet Integration**\n\n` +
+        `🦊 <b>Freighter Wallet Integration</b>\n\n` +
         `Connect your Freighter browser extension wallet to Stellar:\n\n` +
-        `👉 [Click here to connect](${walletUrl})\n\n` +
-        `**After connecting you can:**\n` +
+        `👉 <a href="${walletUrl}">Click here to connect</a>\n\n` +
+        `<b>After connecting you can:</b>\n` +
         `• View your wallet balances\n` +
         `• Sign and approve transactions\n` +
         `• Interact with Stellar dApps\n\n` +
-        `**Requirements:**\n` +
+        `<b>Requirements:</b>\n` +
         `• Freighter extension installed\n` +
         `• Open link in browser with Freighter\n\n` +
         `Network: ${network}\n\n` +
-        `🔗 Get Freighter: https://freighter.app`;
+        `🔗 Get Freighter: <a href="https://freighter.app">freighter.app</a>`;
 
-      await telegramApi.sendMessage(chatId, message);
+      await telegramApi.sendMessage(chatId, message, "HTML");
 
       return {
         success: true,
