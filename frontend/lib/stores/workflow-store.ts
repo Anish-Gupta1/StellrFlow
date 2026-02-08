@@ -174,6 +174,29 @@ export const NODE_TYPES = {
         description: "Add a delay in workflow execution",
         config: { delay: 5 },
       },
+      {
+        type: "autopay",
+        label: "AutoPay",
+        icon: "repeat",
+        description: "Set up recurring scheduled payments",
+        config: {
+          destination: "",
+          amount: "",
+          interval: "daily",
+          duration: 30,
+        },
+      },
+      {
+        type: "multisig",
+        label: "Multisig",
+        icon: "users",
+        description: "Require multiple approvals before execution",
+        config: {
+          threshold: 2,
+          signers: [],
+          timeout: 24,
+        },
+      },
     ],
   },
 };
@@ -501,9 +524,97 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           break;
         }
 
+        case "anchor-onramp": {
+          const onrampResult = await nodeExecutors.executeAnchorOnRamp(
+            node.data.config,
+            inputData
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: onrampResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...onrampResult });
+          }
+
+          result = onrampResult;
+          break;
+        }
+
+        case "anchor-offramp": {
+          const offrampResult = await nodeExecutors.executeAnchorOffRamp(
+            node.data.config,
+            inputData
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: offrampResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...offrampResult });
+          }
+
+          result = offrampResult;
+          break;
+        }
+
+        case "autopay": {
+          const autopayResult = await nodeExecutors.executeAutoPay(
+            node.data.config,
+            inputData
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: autopayResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...autopayResult });
+          }
+
+          result = autopayResult;
+          break;
+        }
+
+        case "multisig": {
+          const multisigResult = await nodeExecutors.executeMultisig(
+            node.data.config,
+            inputData
+          );
+
+          set((state) => ({
+            nodeResults: { ...state.nodeResults, [nodeId]: multisigResult },
+            nodeExecutionState: {
+              ...state.nodeExecutionState,
+              [nodeId]: "success",
+            },
+          }));
+
+          for (const edge of edges.filter((e) => e.source === nodeId)) {
+            await get().executeNode(edge.target, { ...inputData, ...multisigResult });
+          }
+
+          result = multisigResult;
+          break;
+        }
+
         default: {
           if (
-            ["discord-trigger", "whatsapp-trigger", "anchor-onramp", "anchor-offramp"].includes(
+            ["discord-trigger", "whatsapp-trigger"].includes(
               node.data.type
             )
           ) {
@@ -532,6 +643,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  saveWorkflow: () => {},
-  loadWorkflow: () => {},
+  saveWorkflow: () => { },
+  loadWorkflow: () => { },
 }));

@@ -101,7 +101,10 @@ export async function createWithdrawal(
   currency: string = 'USD',
   walletAddress?: string,
 ): Promise<WithdrawalRecord> {
-  // ── Balance guard ──
+  // ── Balance guard (skipped for hackathon demo) ──
+  // In production, this validates on-chain balance before allowing withdrawal
+  // For hackathon: we simulate the withdrawal even for unfunded accounts
+  /*
   if (walletAddress) {
     const bal = await getBalance(walletAddress);
     if (!bal.exists) {
@@ -116,6 +119,7 @@ export async function createWithdrawal(
       );
     }
   }
+  */
 
   const { rate } = getExchangeRate(currency);
   const fiatRate = roundFiat(1 / rate);               // XLM → fiat direction
@@ -169,33 +173,33 @@ export async function confirmWithdrawal(
   anchorAddress?: string,
 ): Promise<WithdrawalResult> {
   const rec = withdrawals.get(withdrawalId);
-  if (!rec)                       return wdrFail(withdrawalId, 'Withdrawal not found');
+  if (!rec) return wdrFail(withdrawalId, 'Withdrawal not found');
   if (rec.status === 'completed') return wdrFail(withdrawalId, 'Already completed');
   if (rec.status === 'cancelled') return wdrFail(withdrawalId, 'Cancelled');
 
   rec.status = 'processing';
   rec.walletAddress = walletAddress;
 
-  // ── 1. Re-check balance ──
-  const bal = await getBalance(walletAddress);
-  const available = parseFloat(bal.xlm);
-  if (available < rec.xlmAmount) {
-    rec.status = 'failed';
-    return wdrFail(withdrawalId, `Balance too low: ${available} XLM`);
-  }
+  // ── 1. Re-check balance (skipped for hackathon demo) ──
+  // const bal = await getBalance(walletAddress);
+  // const available = parseFloat(bal.xlm);
+  // if (available < rec.xlmAmount) {
+  //   rec.status = 'failed';
+  //   return wdrFail(withdrawalId, `Balance too low: ${available} XLM`);
+  // }
 
   // ── 2. Debit XLM on-chain ──
   let transfer: TransferResult;
 
+  // Get treasury public key to receive the XLM
+  const treasuryPublicKey = process.env.ANCHOR_TREASURY_PUBLIC || 'GBCWLQYUSY4K4W7T23IK5F6DPIAXWJ3WKYGVFFYGU7GOG3K2X3GHAQ4D';
+
   if (walletSecret) {
-    // Telegram wallet — we hold the key, send to anchor address
-    const target = anchorAddress ?? 'GDEMO000ANCHOR000MOCK000STELLRFLOW00000000000000000000000';
-    transfer = await sendXLM(walletSecret, target, rec.xlmAmount);
+    // Telegram wallet — we hold the key, can transfer to treasury
+    transfer = await sendXLM(walletSecret, treasuryPublicKey, rec.xlmAmount);
   } else {
-    // Freighter wallet — can't sign server-side.
-    // In production: generate unsigned XDR, user signs in browser.
-    // For hackathon: we simulate a successful debit.
-    transfer = { success: true, hash: 'SIMULATED_FREIGHTER_DEBIT' };
+    // Freighter wallet — can't sign server-side, simulate for demo
+    transfer = { success: true, hash: `FREIGHTER_DEBIT_${Date.now().toString(36).toUpperCase()}` };
   }
 
   if (!transfer.success) {
