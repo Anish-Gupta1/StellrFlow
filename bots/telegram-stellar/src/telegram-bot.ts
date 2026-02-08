@@ -13,6 +13,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Horizon, Networks, Keypair, TransactionBuilder, Operation, Asset, BASE_FEE } from "@stellar/stellar-sdk";
+import { answerStellarQuestion } from "./sdk-chatbot.js";
 
 dotenv.config();
 
@@ -34,9 +35,20 @@ const HORIZON_URL =
 // Optional: Stellar secret key for /send (bot-funded payments)
 const STELLAR_SECRET_KEY = process.env.STELLAR_SECRET_KEY || "";
 
+// Optional: OpenAI chatbot configuration
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const CHATBOT_REQUEST_TIMEOUT_MS = parseInt(
+  process.env.CHATBOT_REQUEST_TIMEOUT_MS || "30000",
+  10
+);
+
 if (!TELEGRAM_BOT_TOKEN) {
   console.error("TELEGRAM_BOT_TOKEN is not defined in .env");
   process.exit(1);
+}
+
+if (!OPENAI_API_KEY) {
+  console.warn("OPENAI_API_KEY not set. AI chatbot will be unavailable.");
 }
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
@@ -558,7 +570,7 @@ function initBot() {
     }
   });
 
-  // Chatbot mode: answer Stellar questions (only when chatbot feature is enabled)
+  // Chatbot mode: answer Stellar questions using AI (only when chatbot feature is enabled)
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id.toString();
     const text = msg.text?.trim() || "";
@@ -570,7 +582,7 @@ function initBot() {
     const session = activeSessions.get(chatId);
     const hasChatbot = session?.features.includes("chatbot");
 
-    // If no session or chatbot not enabled, send a helpful message
+    // If no session or chatbot not enabled, don't respond
     if (!session) {
       // No active session - user hasn't connected via StellrFlow
       return; // Silent - don't respond to random messages
@@ -586,101 +598,22 @@ function initBot() {
       return;
     }
 
-    // Chatbot is enabled - answer Stellar-related questions using SDK/docs
+    // Chatbot is enabled - use AI to answer Stellar questions
     if (text.length > 2) {
       try {
-        const lower = text.toLowerCase();
-        let reply = "";
+        // Typing indicator for UX (30s is typical timeout)
+        await bot.sendChatAction(chatId, "typing");
 
-        if (lower.includes("balance") || lower.includes("xlm")) {
-          const addrMatch = text.match(/G[A-Z2-7]{55}/);
-          if (addrMatch) {
-            const account = await horizon.loadAccount(addrMatch[0]);
-            const xlm = account.balances.find((b) => b.asset_type === "native");
-            const bal = xlm && "balance" in xlm ? xlm.balance : "0";
-            reply = `💰 Balance: **${bal} XLM**`;
-          } else {
-            reply = "Send `/balance G...` with a Stellar address to check balance.";
-          }
-        } else if (lower.includes("what is stellar") || lower.includes("about stellar")) {
-          reply =
-            "🌟 **Stellar** is a decentralized, open-source blockchain network designed for fast, low-cost cross-border payments and asset transfers.\n\n" +
-            "Key features:\n" +
-            "• Transactions settle in 3-5 seconds\n" +
-            "• Fees are ~0.00001 XLM (~$0.000001)\n" +
-            "• Built-in DEX for asset exchange\n" +
-            "• Supports tokenization of any asset\n\n" +
-            "📚 Docs: https://developers.stellar.org";
-        } else if (lower.includes("soroban")) {
-          reply =
-            "🔧 **Soroban** is Stellar's smart contract platform.\n\n" +
-            "Features:\n" +
-            "• Written in Rust, compiled to WASM\n" +
-            "• Predictable gas fees\n" +
-            "• Built-in testing framework\n" +
-            "• Interoperable with Stellar's asset layer\n\n" +
-            "📚 Start building: https://soroban.stellar.org";
-        } else if (lower.includes("anchor") || lower.includes("sep")) {
-          reply =
-            "⚓ **Anchors** are bridges between Stellar and traditional finance.\n\n" +
-            "Key SEPs (Stellar Ecosystem Proposals):\n" +
-            "• **SEP-6** - Deposit/withdraw fiat\n" +
-            "• **SEP-10** - Authentication\n" +
-            "• **SEP-24** - Interactive deposits\n" +
-            "• **SEP-31** - Cross-border payments\n\n" +
-            "📚 Docs: https://developers.stellar.org/docs/anchoring-assets";
-        } else if (lower.includes("xlm") || lower.includes("lumen")) {
-          reply =
-            "💫 **XLM (Lumens)** is Stellar's native cryptocurrency.\n\n" +
-            "Uses:\n" +
-            "• Pay transaction fees\n" +
-            "• Minimum balance requirements\n" +
-            "• Bridge currency for asset exchange\n\n" +
-            "Current network: " + STELLAR_NETWORK;
-        } else if (lower.includes("freighter") || lower.includes("wallet")) {
-          reply =
-            "👛 **Freighter** is the most popular Stellar wallet browser extension.\n\n" +
-            "Features:\n" +
-            "• Secure key management\n" +
-            "• Sign Soroban transactions\n" +
-            "• Multiple account support\n\n" +
-            "🔗 Install: https://freighter.app";
-        } else if (lower.includes("horizon") || lower.includes("api")) {
-          reply =
-            "🌐 **Horizon** is Stellar's REST API server.\n\n" +
-            "Endpoints:\n" +
-            "• `/accounts/{id}` - Account info\n" +
-            "• `/transactions` - Submit/query txns\n" +
-            "• `/assets` - Asset info\n\n" +
-            "📚 API Docs: https://developers.stellar.org/api/horizon";
-        } else if (lower.includes("help") || lower.includes("?")) {
-          reply =
-            "🤖 I can help with Stellar! Ask about:\n\n" +
-            "• What is Stellar?\n" +
-            "• What is Soroban?\n" +
-            "• What is XLM?\n" +
-            "• What are Anchors?\n" +
-            "• Tell me about Freighter wallet\n" +
-            "• /balance <address>\n\n" +
-            "Just type your question!";
-        } else {
-          reply =
-            "🤔 I'm not sure about that. Try asking about:\n" +
-            "• Stellar basics\n" +
-            "• Soroban smart contracts\n" +
-            "• XLM / Lumens\n" +
-            "• Anchors & SEPs\n" +
-            "• Freighter wallet\n\n" +
-            "Or use `/balance <address>` to check a balance.";
-        }
+        // Get AI response from SDK chatbot module
+        const aiResponse = await answerStellarQuestion(text);
 
-        if (reply) {
-          await bot.sendMessage(chatId, reply, { parse_mode: "Markdown" });
-        }
+        // Send response to user
+        await bot.sendMessage(chatId, aiResponse, { parse_mode: "Markdown" });
       } catch (err: any) {
+        console.error("Chatbot error:", err);
         await bot.sendMessage(
           chatId,
-          `❌ Error: ${err?.response?.data?.detail || err.message || "Try again"}`
+          "❌ Error: " + (err?.message || "Failed to process your question. Try again.")
         );
       }
     }
